@@ -9,6 +9,7 @@ import {
   RoomUsage,
   BuildingMaterial
 } from '../types/calculator';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const Calculator = () => {
   const [customizationLevel, setCustomizationLevel] = useState<CustomizationLevel>('low');
@@ -363,31 +364,46 @@ const Calculator = () => {
 
           {/* Input Fields */}
           <div className="space-y-6">
-            {renderLowLevelInputs()}
-            {customizationLevel !== 'low' && renderMediumLevelInputs()}
-            {customizationLevel === 'high' && renderHighLevelInputs()}
+            <motion.div
+              className="bg-white p-6 rounded-lg shadow-lg"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5 }}
+            >
+              {renderLowLevelInputs()}
+              {customizationLevel !== 'low' && renderMediumLevelInputs()}
+              {customizationLevel === 'high' && renderHighLevelInputs()}
 
-            <div className="mt-8">
-              <button
-                onClick={calculateTonnage}
-                className="w-full bg-emerald-600 text-white py-3 rounded-lg hover:bg-emerald-700 transition duration-300"
-              >
-                Calculate AC Tonnage
-              </button>
-            </div>
-
-            {result && (
-              <div className="mt-8 p-6 bg-emerald-50 rounded-lg">
-                <h3 className="text-xl font-semibold mb-2">Recommended AC Tonnage:</h3>
-                <p className="text-3xl text-emerald-600 font-bold">
-                  {Math.ceil(result * 2) / 2} Tons
-                </p>
-                <p className="mt-2 text-gray-600">
-                  This calculation is based on your input parameters and standard cooling load factors.
-                  For the most accurate results, please consult with an HVAC professional.
-                </p>
+              <div className="mt-8">
+                <button
+                  onClick={calculateTonnage}
+                  className="w-full bg-emerald-600 text-white py-3 rounded-lg hover:bg-emerald-700 transition duration-300"
+                >
+                  Calculate AC Tonnage
+                </button>
               </div>
-            )}
+            </motion.div>
+
+            <AnimatePresence>
+              {result && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className="mt-6 p-6 bg-emerald-50 rounded-lg"
+                >
+                  <h3 className="text-xl font-semibold mb-2">Recommended AC Tonnage:</h3>
+                  <p className="text-3xl text-emerald-600 font-bold">
+                    {Math.ceil(result * 2) / 2} Tons
+                  </p>
+                  <p className="mt-2 text-gray-600">
+                    This calculation is based on your input parameters and standard cooling load factors.
+                    For the most accurate results, please consult with an HVAC professional.
+                  </p>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </div>
       </div>
