@@ -3,11 +3,12 @@ import {
   CustomizationLevel, 
   CalculatorInputs, 
   DEFAULT_VALUES,
-  FloorLevel,
-  WindowOrientation,
-  InsulationQuality,
-  RoomUsage,
-  BuildingMaterial
+  CITY_TEMPERATURES,
+  APPLIANCES,
+  U_FACTORS,
+  SAFETY_FACTORS,
+  CONSTANTS,
+  RoofType
 } from '../types/calculator';
 
 const Calculator = () => {
@@ -15,77 +16,124 @@ const Calculator = () => {
   const [inputs, setInputs] = useState<CalculatorInputs>({
     customizationLevel: 'low',
     roomDimensions: DEFAULT_VALUES.roomDimensions,
-    location: DEFAULT_VALUES.location,
+    city: DEFAULT_VALUES.city,
+    indoorTemp: DEFAULT_VALUES.indoorTemp,
+    relativeHumidity: DEFAULT_VALUES.relativeHumidity,
+    roofType: DEFAULT_VALUES.roofType
   });
   const [result, setResult] = useState<number | null>(null);
+  const [calculationDetails, setCalculationDetails] = useState<string[]>([]);
 
   const calculateTonnage = () => {
+    const details: string[] = [];
     let totalBTU = 0;
+
+    // Get room dimensions
+    const { length, width, height } = inputs.roomDimensions;
+    const roomArea = length * width;
+    const roomVolume = roomArea * height;
     
-    // 1. Room Area Load
-    const roomArea = inputs.roomDimensions.length * inputs.roomDimensions.width;
-    totalBTU += roomArea * 20;
+    // Get temperatures
+    const cityTemp = CITY_TEMPERATURES[inputs.city];
+    const deltaT = inputs.indoorTemp - cityTemp.dbt;
 
-    // 2. Ceiling Height Adjustment
-    if (inputs.roomDimensions.height > 10) {
-      totalBTU *= 1.1;
+    // 1. Sensible Heat Through Walls
+    const wallArea = 2 * (length + width) * height;
+    const Q_walls = U_FACTORS.wall * wallArea * Math.abs(deltaT);
+    details.push(`Wall Heat Load: ${Q_walls.toFixed(2)} BTU/hr`);
+    totalBTU += Q_walls;
+
+    // 2. Roof Heat Load
+    const roofArea = length * width;
+    const roofUFactor = inputs.roofType === 'insulated' ? U_FACTORS.roof_insulated : U_FACTORS.roof_uninsulated;
+    const Q_roof = roofUFactor * roofArea * Math.abs(deltaT);
+    details.push(`Roof Heat Load (${inputs.roofType}): ${Q_roof.toFixed(2)} BTU/hr`);
+    totalBTU += Q_roof;
+
+    // Add roof weight factor if sun exposed
+    if (inputs.isRoofSunExposed) {
+      const roofWeightFactor = CONSTANTS.roofSunExposed / CONSTANTS.roofShaded;
+      totalBTU *= roofWeightFactor;
+      details.push(`Roof Sun Exposure Factor Applied: ${roofWeightFactor.toFixed(2)}x`);
     }
 
-    // 3. Occupant Load
+    // 3. Windows and Doors (Medium and High levels)
+    if (inputs.windowDoorDetails) {
+      const { windowCount, windowArea, doorCount, doorArea } = inputs.windowDoorDetails;
+      const totalWindowArea = windowCount * windowArea;
+      const totalDoorArea = doorCount * doorArea;
+
+      const Q_windows = U_FACTORS.window * totalWindowArea * Math.abs(deltaT);
+      const Q_doors = U_FACTORS.door * totalDoorArea * Math.abs(deltaT);
+
+      details.push(`Window Heat Load: ${Q_windows.toFixed(2)} BTU/hr`);
+      details.push(`Door Heat Load: ${Q_doors.toFixed(2)} BTU/hr`);
+
+      totalBTU += Q_windows + Q_doors;
+    }
+
+    // 4. Ventilation Load
+    if (inputs.airChangesPerHour) {
+      // Fresh air requirement
+      const occupantCFM = (inputs.occupants || 0) * CONSTANTS.cfmPerPerson;
+      const volumeCFM = (roomVolume * inputs.airChangesPerHour) / 60;
+      const totalCFM = Math.max(occupantCFM, volumeCFM);
+
+      // Sensible heat
+      const Q_ventilation_sensible = CONSTANTS.sensibleHeat * totalCFM * Math.abs(deltaT);
+      // Latent heat
+      const Q_ventilation_latent = CONSTANTS.latentHeat * totalCFM * CONSTANTS.humidityRatio;
+
+      details.push(`Ventilation Sensible Load: ${Q_ventilation_sensible.toFixed(2)} BTU/hr`);
+      details.push(`Ventilation Latent Load: ${Q_ventilation_latent.toFixed(2)} BTU/hr`);
+
+      totalBTU += Q_ventilation_sensible + Q_ventilation_latent;
+    }
+
+    // 5. Occupant Load
     if (inputs.occupants) {
-      totalBTU += inputs.occupants * 600;
+      const Q_people = inputs.occupants * CONSTANTS.personHeatGain;
+      details.push(`Occupant Load: ${Q_people.toFixed(2)} BTU/hr`);
+      totalBTU += Q_people;
     }
 
-    // 4. Window Load
-    if (inputs.windowDetails?.area) {
-      const windowLoadFactor = {
-        south: 200,
-        east: 150,
-        west: 150,
-        north: 100,
-      }[inputs.windowDetails.orientation || 'south'];
-      
-      totalBTU += inputs.windowDetails.area * windowLoadFactor;
+    // 6. Appliance Load
+    if (inputs.appliances) {
+      let applianceWattage = 0;
+      Object.entries(inputs.appliances).forEach(([name, count]) => {
+        const appliance = APPLIANCES.find(a => a.name === name);
+        if (appliance) {
+          applianceWattage += appliance.wattage * count;
+        }
+      });
+      const Q_appliances = applianceWattage * CONSTANTS.btuConversion;
+      details.push(`Appliance Load: ${Q_appliances.toFixed(2)} BTU/hr`);
+      totalBTU += Q_appliances;
     }
 
-    // 5. Appliance Load
-    if (inputs.applianceLoad) {
-      totalBTU += inputs.applianceLoad * 3.41;
+    // 7. Lighting Load
+    if (inputs.lightingLoad) {
+      const Q_lighting = inputs.lightingLoad * roomArea * CONSTANTS.btuConversion;
+      details.push(`Lighting Load: ${Q_lighting.toFixed(2)} BTU/hr`);
+      totalBTU += Q_lighting;
     }
 
-    // 6. Wall Insulation Adjustment
-    if (inputs.insulationQuality) {
-      const insulationFactor = {
-        poor: 1.1,
-        average: 1.05,
-        good: 1.0,
-      }[inputs.insulationQuality];
-      
-      totalBTU *= insulationFactor;
-    }
-
-    // 7. Sunlight Exposure
-    if (inputs.sunlightHours) {
-      totalBTU += inputs.sunlightHours * 1000;
-    }
-
-    // 8. Ventilation Load
-    if (inputs.ventilationRate) {
-      totalBTU += inputs.ventilationRate * 200;
-    }
-
-    // Additional factors
-    if (inputs.hasKitchen) {
-      totalBTU += 1200; // Additional load for kitchen
-    }
-
-    if (inputs.hasRoofExposure) {
-      totalBTU *= 1.1; // 10% increase for roof exposure
-    }
-
-    // Convert BTU to Tons
-    const tons = totalBTU / 12000;
+    // Apply safety factors
+    const ductLoss = totalBTU * SAFETY_FACTORS.ductLeakage;
+    const fanHeat = totalBTU * SAFETY_FACTORS.fanHeat;
+    const safetyLoad = totalBTU * SAFETY_FACTORS.heatLoad;
+    
+    totalBTU += ductLoss + fanHeat + safetyLoad;
+    
+    details.push(`Duct Loss: ${ductLoss.toFixed(2)} BTU/hr`);
+    details.push(`Fan Heat: ${fanHeat.toFixed(2)} BTU/hr`);
+    details.push(`Safety Load: ${safetyLoad.toFixed(2)} BTU/hr`);
+    details.push(`Total Heat Load: ${totalBTU.toFixed(2)} BTU/hr`);
+    
+    // Convert to Tons
+    const tons = totalBTU / CONSTANTS.tonConversion;
     setResult(tons);
+    setCalculationDetails(details);
   };
 
   const renderLowLevelInputs = () => (
@@ -116,7 +164,7 @@ const Calculator = () => {
           />
         </div>
         <div>
-          <label className="block text-gray-700 mb-2">Ceiling Height (ft)</label>
+          <label className="block text-gray-700 mb-2">Room Height (ft)</label>
           <input
             type="number"
             value={inputs.roomDimensions.height}
@@ -128,25 +176,109 @@ const Calculator = () => {
           />
         </div>
       </div>
-      <div>
-        <label className="block text-gray-700 mb-2">Location</label>
-        <select
-          value={inputs.location}
-          onChange={(e) => setInputs({ ...inputs, location: e.target.value })}
-          className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
-        >
-          <option value="Mumbai">Mumbai</option>
-          <option value="Delhi">Delhi</option>
-          <option value="Bangalore">Bangalore</option>
-          <option value="Chennai">Chennai</option>
-          <option value="Kolkata">Kolkata</option>
-        </select>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div>
+          <label className="block text-gray-700 mb-2">City</label>
+          <select
+            value={inputs.city}
+            onChange={(e) => setInputs({ ...inputs, city: e.target.value })}
+            className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
+          >
+            {Object.keys(CITY_TEMPERATURES).map(city => (
+              <option key={city} value={city}>{city}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-gray-700 mb-2">Indoor Temperature (°F)</label>
+          <input
+            type="number"
+            value={inputs.indoorTemp}
+            onChange={(e) => setInputs({ ...inputs, indoorTemp: Number(e.target.value) })}
+            className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
+          />
+        </div>
+        <div>
+          <label className="block text-gray-700 mb-2">Roof Type</label>
+          <select
+            value={inputs.roofType}
+            onChange={(e) => setInputs({ ...inputs, roofType: e.target.value as RoofType })}
+            className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
+          >
+            <option value="insulated">Insulated</option>
+            <option value="uninsulated">Uninsulated</option>
+          </select>
+        </div>
       </div>
     </div>
   );
 
   const renderMediumLevelInputs = () => (
     <div className="space-y-6 mt-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <label className="block text-gray-700 mb-2">Number of Windows</label>
+          <input
+            type="number"
+            value={inputs.windowDoorDetails?.windowCount || DEFAULT_VALUES.windowDoorDetails.windowCount}
+            onChange={(e) => setInputs({
+              ...inputs,
+              windowDoorDetails: {
+                ...inputs.windowDoorDetails || DEFAULT_VALUES.windowDoorDetails,
+                windowCount: Number(e.target.value)
+              }
+            })}
+            className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
+          />
+        </div>
+        <div>
+          <label className="block text-gray-700 mb-2">Window Area (sq ft)</label>
+          <input
+            type="number"
+            value={inputs.windowDoorDetails?.windowArea || DEFAULT_VALUES.windowDoorDetails.windowArea}
+            onChange={(e) => setInputs({
+              ...inputs,
+              windowDoorDetails: {
+                ...inputs.windowDoorDetails || DEFAULT_VALUES.windowDoorDetails,
+                windowArea: Number(e.target.value)
+              }
+            })}
+            className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
+          />
+        </div>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <label className="block text-gray-700 mb-2">Number of Doors</label>
+          <input
+            type="number"
+            value={inputs.windowDoorDetails?.doorCount || DEFAULT_VALUES.windowDoorDetails.doorCount}
+            onChange={(e) => setInputs({
+              ...inputs,
+              windowDoorDetails: {
+                ...inputs.windowDoorDetails || DEFAULT_VALUES.windowDoorDetails,
+                doorCount: Number(e.target.value)
+              }
+            })}
+            className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
+          />
+        </div>
+        <div>
+          <label className="block text-gray-700 mb-2">Door Area (sq ft)</label>
+          <input
+            type="number"
+            value={inputs.windowDoorDetails?.doorArea || DEFAULT_VALUES.windowDoorDetails.doorArea}
+            onChange={(e) => setInputs({
+              ...inputs,
+              windowDoorDetails: {
+                ...inputs.windowDoorDetails || DEFAULT_VALUES.windowDoorDetails,
+                doorArea: Number(e.target.value)
+              }
+            })}
+            className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
+          />
+        </div>
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
           <label className="block text-gray-700 mb-2">Number of Occupants</label>
@@ -158,168 +290,64 @@ const Calculator = () => {
           />
         </div>
         <div>
-          <label className="block text-gray-700 mb-2">Window Area (sq ft)</label>
+          <label className="block text-gray-700 mb-2">Air Changes per Hour</label>
           <input
             type="number"
-            value={inputs.windowDetails?.area || DEFAULT_VALUES.windowArea}
-            onChange={(e) => setInputs({
-              ...inputs,
-              windowDetails: { ...inputs.windowDetails, area: Number(e.target.value) }
-            })}
+            step="0.1"
+            value={inputs.airChangesPerHour || DEFAULT_VALUES.airChangesPerHour}
+            onChange={(e) => setInputs({ ...inputs, airChangesPerHour: Number(e.target.value) })}
             className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
           />
         </div>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div>
-          <label className="block text-gray-700 mb-2">Floor Level</label>
-          <select
-            value={inputs.floorLevel || DEFAULT_VALUES.floorLevel}
-            onChange={(e) => setInputs({ ...inputs, floorLevel: e.target.value as FloorLevel })}
-            className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
-          >
-            <option value="ground">Ground Floor</option>
-            <option value="middle">Middle Floor</option>
-            <option value="top">Top Floor</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-gray-700 mb-2">Kitchen in Room?</label>
-          <div className="flex items-center space-x-4 mt-2">
-            <label className="inline-flex items-center">
-              <input
-                type="radio"
-                checked={inputs.hasKitchen === true}
-                onChange={() => setInputs({ ...inputs, hasKitchen: true })}
-                className="form-radio text-emerald-600"
-              />
-              <span className="ml-2">Yes</span>
-            </label>
-            <label className="inline-flex items-center">
-              <input
-                type="radio"
-                checked={inputs.hasKitchen === false}
-                onChange={() => setInputs({ ...inputs, hasKitchen: false })}
-                className="form-radio text-emerald-600"
-              />
-              <span className="ml-2">No</span>
-            </label>
-          </div>
-        </div>
+      <div>
+        <label className="flex items-center space-x-2">
+          <input
+            type="checkbox"
+            checked={inputs.isRoofSunExposed}
+            onChange={(e) => setInputs({ ...inputs, isRoofSunExposed: e.target.checked })}
+            className="form-checkbox text-emerald-600"
+          />
+          <span>Is Roof Sun Exposed?</span>
+        </label>
       </div>
     </div>
   );
 
   const renderHighLevelInputs = () => (
     <div className="space-y-6 mt-6">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div>
-          <label className="block text-gray-700 mb-2">Window Orientation</label>
-          <select
-            value={inputs.windowDetails?.orientation || DEFAULT_VALUES.windowOrientation}
-            onChange={(e) => setInputs({
-              ...inputs,
-              windowDetails: { ...inputs.windowDetails, orientation: e.target.value as WindowOrientation }
-            })}
-            className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
-          >
-            <option value="north">North</option>
-            <option value="south">South</option>
-            <option value="east">East</option>
-            <option value="west">West</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-gray-700 mb-2">Wall Insulation</label>
-          <select
-            value={inputs.insulationQuality || DEFAULT_VALUES.insulationQuality}
-            onChange={(e) => setInputs({ ...inputs, insulationQuality: e.target.value as InsulationQuality })}
-            className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
-          >
-            <option value="poor">Poor</option>
-            <option value="average">Average</option>
-            <option value="good">Good</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-gray-700 mb-2">Room Usage</label>
-          <select
-            value={inputs.roomUsage || DEFAULT_VALUES.roomUsage}
-            onChange={(e) => setInputs({ ...inputs, roomUsage: e.target.value as RoomUsage })}
-            className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
-          >
-            <option value="residential">Residential</option>
-            <option value="office">Office</option>
-            <option value="commercial">Commercial</option>
-          </select>
+      <div>
+        <label className="block text-gray-700 mb-2">Appliances</label>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {APPLIANCES.map(appliance => (
+            <div key={appliance.name} className="flex items-center space-x-2">
+              <label className="flex-grow">{appliance.name}</label>
+              <input
+                type="number"
+                min="0"
+                value={inputs.appliances?.[appliance.name] || 0}
+                onChange={(e) => setInputs({
+                  ...inputs,
+                  appliances: {
+                    ...inputs.appliances,
+                    [appliance.name]: Number(e.target.value)
+                  }
+                })}
+                className="w-20 p-2 border rounded focus:ring-2 focus:ring-emerald-500"
+              />
+            </div>
+          ))}
         </div>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div>
-          <label className="block text-gray-700 mb-2">Appliance Load (Watts)</label>
-          <input
-            type="number"
-            value={inputs.applianceLoad || DEFAULT_VALUES.applianceLoad}
-            onChange={(e) => setInputs({ ...inputs, applianceLoad: Number(e.target.value) })}
-            className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
-          />
-        </div>
-        <div>
-          <label className="block text-gray-700 mb-2">Sunlight Hours</label>
-          <input
-            type="number"
-            value={inputs.sunlightHours || DEFAULT_VALUES.sunlightHours}
-            onChange={(e) => setInputs({ ...inputs, sunlightHours: Number(e.target.value) })}
-            className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
-          />
-        </div>
-        <div>
-          <label className="block text-gray-700 mb-2">Ventilation Rate (ACH)</label>
-          <input
-            type="number"
-            step="0.1"
-            value={inputs.ventilationRate || DEFAULT_VALUES.ventilationRate}
-            onChange={(e) => setInputs({ ...inputs, ventilationRate: Number(e.target.value) })}
-            className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
-          />
-        </div>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div>
-          <label className="block text-gray-700 mb-2">Building Material</label>
-          <select
-            value={inputs.buildingMaterial || DEFAULT_VALUES.buildingMaterial}
-            onChange={(e) => setInputs({ ...inputs, buildingMaterial: e.target.value as BuildingMaterial })}
-            className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
-          >
-            <option value="concrete">Concrete</option>
-            <option value="brick">Brick</option>
-            <option value="wood">Wood</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-gray-700 mb-2">Roof Exposure</label>
-          <div className="flex items-center space-x-4 mt-2">
-            <label className="inline-flex items-center">
-              <input
-                type="radio"
-                checked={inputs.hasRoofExposure === true}
-                onChange={() => setInputs({ ...inputs, hasRoofExposure: true })}
-                className="form-radio text-emerald-600"
-              />
-              <span className="ml-2">Yes</span>
-            </label>
-            <label className="inline-flex items-center">
-              <input
-                type="radio"
-                checked={inputs.hasRoofExposure === false}
-                onChange={() => setInputs({ ...inputs, hasRoofExposure: false })}
-                className="form-radio text-emerald-600"
-              />
-              <span className="ml-2">No</span>
-            </label>
-          </div>
-        </div>
+      <div>
+        <label className="block text-gray-700 mb-2">Lighting Load (W/ft²)</label>
+        <input
+          type="number"
+          step="0.1"
+          value={inputs.lightingLoad || DEFAULT_VALUES.lightingLoad}
+          onChange={(e) => setInputs({ ...inputs, lightingLoad: Number(e.target.value) })}
+          className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
+        />
       </div>
     </div>
   );
@@ -382,7 +410,15 @@ const Calculator = () => {
                 <p className="text-3xl text-emerald-600 font-bold">
                   {Math.ceil(result * 2) / 2} Tons
                 </p>
-                <p className="mt-2 text-gray-600">
+                <div className="mt-4">
+                  <h4 className="font-semibold mb-2">Calculation Details:</h4>
+                  <ul className="space-y-1 text-sm text-gray-600">
+                    {calculationDetails.map((detail, index) => (
+                      <li key={index}>{detail}</li>
+                    ))}
+                  </ul>
+                </div>
+                <p className="mt-4 text-sm text-gray-600">
                   This calculation is based on your input parameters and standard cooling load factors.
                   For the most accurate results, please consult with an HVAC professional.
                 </p>
