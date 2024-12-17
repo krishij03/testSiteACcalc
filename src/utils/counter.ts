@@ -12,22 +12,13 @@ const incrementLocalVisitCount = (): number => {
 
 const getGlobalVisitCount = async (): Promise<number> => {
   try {
+    // Using CountAPI with a namespace specific to your website
     const response = await fetch('https://api.countapi.xyz/hit/smartenergysoftware.co.in/visits');
     const data = await response.json();
-    
-    // Broadcast the new count to all connected clients
-    if (typeof window !== 'undefined' && window.WebSocket) {
-      const ws = new WebSocket('wss://socketsbay.com/wss/v2/1/demo/');
-      ws.onopen = () => {
-        ws.send(JSON.stringify({ type: 'visitorCount', count: data.value }));
-        ws.close();
-      };
-    }
-    
     return data.value;
   } catch (error) {
     console.error('Error fetching visit count:', error);
-    return 0;
+    return 1; // Fallback to 1 if API fails
   }
 };
 

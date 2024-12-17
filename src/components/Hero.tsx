@@ -1,12 +1,10 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import acImage from '../assets/types-of-air-conditioners.jpeg';
 import { getGlobalVisitCount } from '../utils/counter';
-import VisitorWebSocket from '../utils/websocket';
 
 const Hero = () => {
-  const [visitorCount, setVisitorCount] = useState<number>(0);
-  const wsRef = useRef<VisitorWebSocket | null>(null);
+  const [visitorCount, setVisitorCount] = useState<number>(1);
 
   useEffect(() => {
     const fetchVisitorCount = async () => {
@@ -15,18 +13,6 @@ const Hero = () => {
     };
 
     fetchVisitorCount();
-
-    // Initialize WebSocket connection
-    wsRef.current = new VisitorWebSocket((count) => {
-      setVisitorCount(count);
-    });
-
-    // Cleanup WebSocket connection
-    return () => {
-      if (wsRef.current) {
-        wsRef.current.disconnect();
-      }
-    };
   }, []);
 
   return (
@@ -56,7 +42,7 @@ const Hero = () => {
                 exit={{ opacity: 0, y: -20 }}
                 transition={{ duration: 0.3 }}
               >
-                You're visitor #{visitorCount}
+                You're visitor #{visitorCount.toLocaleString()}
               </motion.p>
             </AnimatePresence>
             <motion.p 
