@@ -1,25 +1,42 @@
-const getLocalVisitCount = (): number => {
-  const count = localStorage.getItem('visitCount');
-  return count ? parseInt(count) : 0;
-};
-
-const incrementLocalVisitCount = (): number => {
-  const currentCount = getLocalVisitCount();
-  const newCount = currentCount + 1;
-  localStorage.setItem('visitCount', newCount.toString());
-  return newCount;
-};
-
 const getGlobalVisitCount = async (): Promise<number> => {
   try {
-    // Using CountAPI with a namespace specific to your website
-    const response = await fetch('https://api.countapi.xyz/hit/smartenergysoftware.co.in/visits');
+    // Using the CORS-enabled version of CountAPI
+    const response = await fetch('https://api.countapi.xyz/hit/smartenergysoftware.co.in/visits', {
+      mode: 'cors',  // Explicitly request CORS
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error('Counter API request failed');
+    }
+
     const data = await response.json();
-    return data.value;
+    return data.value || 1;
   } catch (error) {
     console.error('Error fetching visit count:', error);
-    return 1; // Fallback to 1 if API fails
+    
+    // Fallback request with different endpoint
+    try {
+      const getResponse = await fetch('https://api.countapi.xyz/get/smartenergysoftware.co.in/visits', {
+        mode: 'cors',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (!getResponse.ok) {
+        throw new Error('Fallback counter request failed');
+      }
+
+      const getData = await getResponse.json();
+      return getData.value || 1;
+    } catch (fallbackError) {
+      console.error('Fallback counter failed:', fallbackError);
+      return 1;
+    }
   }
 };
 
-export { getLocalVisitCount, incrementLocalVisitCount, getGlobalVisitCount }; 
+export { getGlobalVisitCount };
