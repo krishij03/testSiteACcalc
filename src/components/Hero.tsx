@@ -1,5 +1,5 @@
 import React from 'react';
-
+import acImage from '../assets/types-of-air-conditioners.jpeg';
 const Hero = () => {
   return (
     <section id="home" className="pt-20 bg-gradient-to-br from-emerald-50 to-white">
@@ -22,7 +22,7 @@ const Hero = () => {
           </div>
           <div className="md:w-1/2">
             <img
-              src="https://images.unsplash.com/photo-1497435334941-8c899ee9e8e9?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80"
+              src={acImage}
               alt="Smart Energy"
               className="rounded-lg shadow-xl"
             />
