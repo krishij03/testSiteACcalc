@@ -1,4 +1,5 @@
 import React from 'react';
+import darshImage from '../assets/WhatsApp Image 2024-12-17 at 2.47.29 PM.jpeg';
 
 const About = () => {
   return (
@@ -7,7 +8,7 @@ const About = () => {
         <div className="max-w-3xl mx-auto text-center">
           <h2 className="text-3xl font-bold mb-8">About Darsh Shah</h2>
           <img
-            src="WhatsApp Image 2024-12-17 at 2.47.29 PM.jpeg"
+            src={darshImage}
             alt="Darsh Shah"
             className="w-32 h-32 rounded-full mx-auto mb-6 object-cover"
           />
