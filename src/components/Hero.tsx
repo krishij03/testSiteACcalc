@@ -1,20 +1,8 @@
-import React, { useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React from 'react';
+import { motion } from 'framer-motion';
 import acImage from '../assets/types-of-air-conditioners.jpeg';
-import { getGlobalVisitCount } from '../utils/counter';
 
 const Hero = () => {
-  const [visitorCount, setVisitorCount] = useState<number>(1);
-
-  useEffect(() => {
-    const fetchVisitorCount = async () => {
-      const count = await getGlobalVisitCount();
-      setVisitorCount(count);
-    };
-
-    fetchVisitorCount();
-  }, []);
-
   return (
     <section id="home" className="pt-20 bg-gradient-to-br from-emerald-50 to-white">
       <div className="container mx-auto px-4 py-20">
@@ -33,18 +21,6 @@ const Hero = () => {
             >
               Smart Energy Starts Here
             </motion.h1>
-            <AnimatePresence mode='wait'>
-              <motion.p
-                key={visitorCount}
-                className="text-lg text-emerald-600 mb-4"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                transition={{ duration: 0.3 }}
-              >
-                You're visitor #{visitorCount.toLocaleString()}
-              </motion.p>
-            </AnimatePresence>
             <motion.p 
               className="text-xl text-gray-600 mb-8"
               initial={{ opacity: 0, y: 20 }}
