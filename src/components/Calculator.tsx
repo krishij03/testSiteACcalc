@@ -1,124 +1,188 @@
 import React, { useState } from 'react';
-import { 
-  CustomizationLevel, 
-  CalculatorInputs, 
-  DEFAULT_VALUES,
-  CITY_TEMPERATURES,
+import {
+  DifficultyLevel,
+  CalculatorInputs,
+  CalculationBreakdown,
+  CITY_DATA,
   APPLIANCES,
   U_FACTORS,
+  HEAT_CONSTANTS,
   SAFETY_FACTORS,
-  CONSTANTS,
-  RoofType,
-  CITY_DATA,
-  HEAT_FACTORS
+  SOLAR_HEAT_GAIN,
+  Direction,
+  Window,
+  Wall
 } from '../types/calculator';
 
+const DEFAULT_INPUTS: CalculatorInputs = {
+  difficultyLevel: 'low',
+  roomDimensions: {
+    length: 15,
+    breadth: 12,
+    height: 10
+  },
+  city: 'Mumbai',
+  windows: [
+    { area: 15, direction: 'W' },
+    { area: 15, direction: 'E' }
+  ],
+  occupants: 2,
+  roofCondition: 'exposed',
+  appliances: {
+    'Lights': 2
+  }
+};
+
 const Calculator = () => {
-  const [customizationLevel, setCustomizationLevel] = useState<CustomizationLevel>('low');
-  const [inputs, setInputs] = useState<CalculatorInputs>({
-    customizationLevel: 'low',
-    roomDimensions: DEFAULT_VALUES.roomDimensions,
-    city: DEFAULT_VALUES.city,
-    indoorTemp: DEFAULT_VALUES.indoorTemp,
-    relativeHumidity: DEFAULT_VALUES.relativeHumidity,
-    roofType: DEFAULT_VALUES.roofType
-  });
-  const [result, setResult] = useState<number | null>(null);
-  const [calculationDetails, setCalculationDetails] = useState<string[]>([]);
+  const [difficultyLevel, setDifficultyLevel] = useState<DifficultyLevel>('low');
+  const [inputs, setInputs] = useState<CalculatorInputs>(DEFAULT_INPUTS);
+  const [breakdown, setBreakdown] = useState<CalculationBreakdown | null>(null);
 
   const calculateTonnage = () => {
-    const details: string[] = [];
     const cityData = CITY_DATA[inputs.city];
-    const { length, width, height } = inputs.roomDimensions;
-    const roomArea = length * width;
+    const { length, breadth, height } = inputs.roomDimensions;
+    const roomArea = length * breadth;
     const roomVolume = roomArea * height;
 
-    // 1. Calculate Room Sensible Heat
-    let roomSensibleHeat = 0;
+    // Initialize breakdown structure
+    const breakdown: CalculationBreakdown = {
+      roomSensible: {
+        glass: 0,
+        wall: 0,
+        floor: 0,
+        roof: 0,
+        people: 0,
+        equipment: 0,
+        lighting: 0,
+        ductGain: 0,
+        fanHeat: 0,
+        total: 0
+      },
+      roomLatent: {
+        people: 0,
+        infiltration: 0,
+        total: 0
+      },
+      outsideAir: {
+        sensible: 0,
+        latent: 0,
+        total: 0
+      },
+      grandTotal: {
+        subtotal: 0,
+        safetyFactor: 0,
+        final: 0
+      },
+      tonnage: 0
+    };
 
-    // Glass heat
-    if (inputs.windowDoorDetails?.windowArea) {
-      const glassHeat = inputs.windowDoorDetails.windowArea * cityData.drange * U_FACTORS.window;
-      roomSensibleHeat += glassHeat;
-      details.push(`Glass Heat: ${glassHeat.toFixed(2)} BTU/hr`);
+    // 1. Room Sensible Heat Calculations
+    
+    // Glass Heat
+    if (inputs.windows) {
+      breakdown.roomSensible.glass = inputs.windows.reduce((total, window) => {
+        return total + (window.area * SOLAR_HEAT_GAIN[window.direction] * U_FACTORS.glass);
+      }, 0);
     }
 
-    // Wall heat
-    const wallArea = 2 * (length + width) * height;
-    const wallHeat = wallArea * cityData.drange * U_FACTORS.wall;
-    roomSensibleHeat += wallHeat;
-    details.push(`Wall Heat: ${wallHeat.toFixed(2)} BTU/hr`);
+    // Wall Heat
+    const wallArea = 2 * (length + breadth) * height;
+    breakdown.roomSensible.wall = wallArea * cityData.drange * U_FACTORS.wall;
 
-    // People heat
-    const peopleHeat = (inputs.occupants || 0) * HEAT_FACTORS.PERSON_SENSIBLE_HEAT;
-    roomSensibleHeat += peopleHeat;
-    details.push(`People Sensible Heat: ${peopleHeat.toFixed(2)} BTU/hr`);
+    // Floor Heat
+    breakdown.roomSensible.floor = roomArea * cityData.drange * U_FACTORS.floor;
 
-    // Equipment heat
+    // Roof Heat
+    const roofUFactor = inputs.roofCondition === 'insulated' ? U_FACTORS.roofInsulated : U_FACTORS.roofUninsulated;
+    breakdown.roomSensible.roof = roomArea * cityData.drange * roofUFactor;
+
+    // People Sensible Heat
+    breakdown.roomSensible.people = (inputs.occupants || 2) * HEAT_CONSTANTS.personSensible;
+
+    // Equipment Heat
     if (inputs.appliances) {
-      let equipmentKW = 0;
-      Object.entries(inputs.appliances).forEach(([name, count]) => {
+      breakdown.roomSensible.equipment = Object.entries(inputs.appliances).reduce((total, [name, count]) => {
         const appliance = APPLIANCES.find(a => a.name === name);
         if (appliance) {
-          equipmentKW += (appliance.wattage * count) / 1000; // Convert to KW
+          return total + (appliance.wattage * count * HEAT_CONSTANTS.equipmentFactor);
         }
-      });
-      const equipmentHeat = equipmentKW * HEAT_FACTORS.EQUIPMENT_HEAT_FACTOR;
-      roomSensibleHeat += equipmentHeat;
-      details.push(`Equipment Heat: ${equipmentHeat.toFixed(2)} BTU/hr`);
+        return total;
+      }, 0);
     }
 
-    // Lighting heat
-    if (inputs.lightingLoad) {
-      const lightingHeat = inputs.lightingLoad * roomArea;
-      roomSensibleHeat += lightingHeat;
-      details.push(`Lighting Heat: ${lightingHeat.toFixed(2)} BTU/hr`);
-    }
+    // Lighting Heat
+    breakdown.roomSensible.lighting = HEAT_CONSTANTS.lightingLoad * roomArea * HEAT_CONSTANTS.lightingFactor;
 
-    // Add duct and fan heat gains
-    const ductGain = roomSensibleHeat * HEAT_FACTORS.DUCT_GAIN;
-    const fanHeat = roomSensibleHeat * HEAT_FACTORS.FAN_HEAT_GAIN;
-    roomSensibleHeat += ductGain + fanHeat;
-    details.push(`Duct Gain: ${ductGain.toFixed(2)} BTU/hr`);
-    details.push(`Fan Heat: ${fanHeat.toFixed(2)} BTU/hr`);
+    // Subtotal before gains
+    const sensibleSubtotal = Object.values(breakdown.roomSensible).reduce((a, b) => a + b, 0);
 
-    // 2. Calculate Room Latent Heat
-    // Calculate ventilation rate
-    const ventByArea = (roomVolume * HEAT_FACTORS.VENTILATION_FACTOR) / 60;
-    const ventByPeople = (inputs.occupants || 0) * 10;
+    // Duct and Fan Heat Gains
+    breakdown.roomSensible.ductGain = sensibleSubtotal * SAFETY_FACTORS.supplyDuct;
+    breakdown.roomSensible.fanHeat = sensibleSubtotal * SAFETY_FACTORS.fanHeat;
+    breakdown.roomSensible.total = sensibleSubtotal + breakdown.roomSensible.ductGain + breakdown.roomSensible.fanHeat;
+
+    // 2. Room Latent Heat Calculations
+    const ventByArea = (roomVolume * HEAT_CONSTANTS.ventilationFactor) / 60;
+    const ventByPeople = (inputs.occupants || 2) * HEAT_CONSTANTS.cfmPerPerson;
     const ventilation = Math.max(ventByArea, ventByPeople);
 
-    const roomLatentHeat = (inputs.occupants || 0) * HEAT_FACTORS.PERSON_LATENT_HEAT +
-      (ventilation * (cityData.grPerLb - 70) * HEAT_FACTORS.LATENT_CONSTANT * HEAT_FACTORS.BYPASS_FACTOR);
+    breakdown.roomLatent.people = (inputs.occupants || 2) * HEAT_CONSTANTS.personLatent;
+    breakdown.roomLatent.infiltration = ventilation * (cityData.grPerLb - HEAT_CONSTANTS.indoorGrains) * 
+      HEAT_CONSTANTS.latentConstant * HEAT_CONSTANTS.bypassFactor;
+    breakdown.roomLatent.total = breakdown.roomLatent.people + breakdown.roomLatent.infiltration;
+
+    // 3. Outside Air Heat
+    breakdown.outsideAir.sensible = ventilation * cityData.drange * 
+      (1 - HEAT_CONSTANTS.bypassFactor) * HEAT_CONSTANTS.sensibleConstant;
     
-    details.push(`Room Latent Heat: ${roomLatentHeat.toFixed(2)} BTU/hr`);
-
-    // 3. Calculate Outside Air Heat
-    const outsideAirSensible = ventilation * cityData.drange * 
-      (1 - HEAT_FACTORS.BYPASS_FACTOR) * HEAT_FACTORS.SENSIBLE_CONSTANT;
+    breakdown.outsideAir.latent = ventilation * (cityData.grPerLb - HEAT_CONSTANTS.indoorGrains) * 
+      (1 - HEAT_CONSTANTS.bypassFactor) * HEAT_CONSTANTS.latentConstant;
     
-    const outsideAirLatent = ventilation * (cityData.grPerLb - 70) * 
-      (1 - HEAT_FACTORS.BYPASS_FACTOR) * HEAT_FACTORS.LATENT_CONSTANT;
+    breakdown.outsideAir.total = breakdown.outsideAir.sensible + breakdown.outsideAir.latent;
 
-    details.push(`Outside Air Sensible Heat: ${outsideAirSensible.toFixed(2)} BTU/hr`);
-    details.push(`Outside Air Latent Heat: ${outsideAirLatent.toFixed(2)} BTU/hr`);
+    // 4. Grand Total Calculations
+    breakdown.grandTotal.subtotal = breakdown.roomSensible.total + 
+      breakdown.roomLatent.total + breakdown.outsideAir.total;
+    
+    breakdown.grandTotal.safetyFactor = breakdown.grandTotal.subtotal * SAFETY_FACTORS.overall;
+    breakdown.grandTotal.final = breakdown.grandTotal.subtotal + breakdown.grandTotal.safetyFactor;
 
-    // Calculate Grand Total Heat
-    const effectiveRoomTotal = roomSensibleHeat + roomLatentHeat;
-    const grandTotalSubtotal = effectiveRoomTotal + outsideAirSensible + outsideAirLatent;
-    const safetyFactor = grandTotalSubtotal * HEAT_FACTORS.SAFETY_FACTOR;
-    const grandTotal = grandTotalSubtotal + safetyFactor;
+    // 5. Final Tonnage
+    breakdown.tonnage = breakdown.grandTotal.final / HEAT_CONSTANTS.tonConversion;
 
-    details.push(`Effective Room Total: ${effectiveRoomTotal.toFixed(2)} BTU/hr`);
-    details.push(`Grand Total Heat: ${grandTotal.toFixed(2)} BTU/hr`);
-
-    // Convert to Tons
-    const tons = grandTotal / HEAT_FACTORS.TON_CONVERSION;
-    setResult(tons);
-    setCalculationDetails(details);
+    setBreakdown(breakdown);
   };
 
-  const renderLowLevelInputs = () => (
+  const renderDifficultySelector = () => (
+    <div className="mb-8">
+      <h3 className="text-lg font-semibold mb-4">Choose Calculation Level</h3>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {(['low', 'medium', 'high'] as DifficultyLevel[]).map((level) => (
+          <button
+            key={level}
+            onClick={() => {
+              setDifficultyLevel(level);
+              setInputs({ ...inputs, difficultyLevel: level });
+            }}
+            className={`p-4 rounded-lg border-2 transition-all ${
+              difficultyLevel === level
+                ? 'border-emerald-600 bg-emerald-50'
+                : 'border-gray-200 hover:border-emerald-400'
+            }`}
+          >
+            <div className="font-semibold capitalize mb-2">{level}</div>
+            <div className="text-sm text-gray-600">
+              {level === 'low' && 'Basic calculation with minimal inputs'}
+              {level === 'medium' && 'Balanced inputs for better accuracy'}
+              {level === 'high' && 'Detailed inputs for precise results'}
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
+  const renderBasicInputs = () => (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div>
@@ -134,13 +198,13 @@ const Calculator = () => {
           />
         </div>
         <div>
-          <label className="block text-gray-700 mb-2">Room Width (ft)</label>
+          <label className="block text-gray-700 mb-2">Room Breadth (ft)</label>
           <input
             type="number"
-            value={inputs.roomDimensions.width}
+            value={inputs.roomDimensions.breadth}
             onChange={(e) => setInputs({
               ...inputs,
-              roomDimensions: { ...inputs.roomDimensions, width: Number(e.target.value) }
+              roomDimensions: { ...inputs.roomDimensions, breadth: Number(e.target.value) }
             })}
             className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
           />
@@ -158,143 +222,59 @@ const Calculator = () => {
           />
         </div>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div>
-          <label className="block text-gray-700 mb-2">City</label>
-          <select
-            value={inputs.city}
-            onChange={(e) => setInputs({ ...inputs, city: e.target.value })}
-            className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
-          >
-            {Object.keys(CITY_DATA).map(city => (
-              <option key={city} value={city}>{city}</option>
-            ))}
-          </select>
-          <div className="mt-2 text-sm text-gray-600">
-            <p>DB: {CITY_DATA[inputs.city].db}°F, WB: {CITY_DATA[inputs.city].wb}°F</p>
-            <p>RH: {CITY_DATA[inputs.city].rh}%, DP: {CITY_DATA[inputs.city].dp}°F</p>
-          </div>
-        </div>
-        <div>
-          <label className="block text-gray-700 mb-2">Roof Type</label>
-          <select
-            value={inputs.roofType}
-            onChange={(e) => setInputs({ ...inputs, roofType: e.target.value as RoofType })}
-            className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
-          >
-            <option value="insulated">Insulated</option>
-            <option value="uninsulated">Uninsulated</option>
-          </select>
+      <div>
+        <label className="block text-gray-700 mb-2">City</label>
+        <select
+          value={inputs.city}
+          onChange={(e) => setInputs({ ...inputs, city: e.target.value })}
+          className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
+        >
+          {Object.keys(CITY_DATA).map(city => (
+            <option key={city} value={city}>{city}</option>
+          ))}
+        </select>
+        {/* Show selected city's data */}
+        <div className="mt-2 text-sm text-gray-600">
+          <p>DB: {CITY_DATA[inputs.city].db}°F, WB: {CITY_DATA[inputs.city].wb}°F</p>
+          <p>RH: {CITY_DATA[inputs.city].rh}%, Grains/lb: {CITY_DATA[inputs.city].grPerLb}</p>
         </div>
       </div>
     </div>
   );
 
-  const renderMediumLevelInputs = () => (
+  const renderMediumInputs = () => (
     <div className="space-y-6 mt-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div>
-          <label className="block text-gray-700 mb-2">Number of Windows</label>
-          <input
-            type="number"
-            value={inputs.windowDoorDetails?.windowCount || DEFAULT_VALUES.windowDoorDetails.windowCount}
-            onChange={(e) => setInputs({
-              ...inputs,
-              windowDoorDetails: {
-                ...inputs.windowDoorDetails || DEFAULT_VALUES.windowDoorDetails,
-                windowCount: Number(e.target.value)
-              }
-            })}
-            className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
-          />
-        </div>
-        <div>
-          <label className="block text-gray-700 mb-2">Window Area (sq ft)</label>
-          <input
-            type="number"
-            value={inputs.windowDoorDetails?.windowArea || DEFAULT_VALUES.windowDoorDetails.windowArea}
-            onChange={(e) => setInputs({
-              ...inputs,
-              windowDoorDetails: {
-                ...inputs.windowDoorDetails || DEFAULT_VALUES.windowDoorDetails,
-                windowArea: Number(e.target.value)
-              }
-            })}
-            className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
-          />
-        </div>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div>
-          <label className="block text-gray-700 mb-2">Number of Doors</label>
-          <input
-            type="number"
-            value={inputs.windowDoorDetails?.doorCount || DEFAULT_VALUES.windowDoorDetails.doorCount}
-            onChange={(e) => setInputs({
-              ...inputs,
-              windowDoorDetails: {
-                ...inputs.windowDoorDetails || DEFAULT_VALUES.windowDoorDetails,
-                doorCount: Number(e.target.value)
-              }
-            })}
-            className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
-          />
-        </div>
-        <div>
-          <label className="block text-gray-700 mb-2">Door Area (sq ft)</label>
-          <input
-            type="number"
-            value={inputs.windowDoorDetails?.doorArea || DEFAULT_VALUES.windowDoorDetails.doorArea}
-            onChange={(e) => setInputs({
-              ...inputs,
-              windowDoorDetails: {
-                ...inputs.windowDoorDetails || DEFAULT_VALUES.windowDoorDetails,
-                doorArea: Number(e.target.value)
-              }
-            })}
-            className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
-          />
-        </div>
-      </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
           <label className="block text-gray-700 mb-2">Number of Occupants</label>
           <input
             type="number"
-            value={inputs.occupants || DEFAULT_VALUES.occupants}
+            value={inputs.occupants || 2}
             onChange={(e) => setInputs({ ...inputs, occupants: Number(e.target.value) })}
             className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
           />
         </div>
         <div>
-          <label className="block text-gray-700 mb-2">Air Changes per Hour</label>
-          <input
-            type="number"
-            step="0.1"
-            value={inputs.airChangesPerHour || DEFAULT_VALUES.airChangesPerHour}
-            onChange={(e) => setInputs({ ...inputs, airChangesPerHour: Number(e.target.value) })}
+          <label className="block text-gray-700 mb-2">Roof Condition</label>
+          <select
+            value={inputs.roofCondition}
+            onChange={(e) => setInputs({ ...inputs, roofCondition: e.target.value as any })}
             className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
-          />
+          >
+            <option value="exposed">Exposed</option>
+            <option value="shaded">Shaded</option>
+            <option value="insulated">Insulated</option>
+            <option value="water-covered">Water Covered</option>
+          </select>
         </div>
-      </div>
-      <div>
-        <label className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            checked={inputs.isRoofSunExposed}
-            onChange={(e) => setInputs({ ...inputs, isRoofSunExposed: e.target.checked })}
-            className="form-checkbox text-emerald-600"
-          />
-          <span>Is Roof Sun Exposed?</span>
-        </label>
       </div>
     </div>
   );
 
-  const renderHighLevelInputs = () => (
+  const renderHighInputs = () => (
     <div className="space-y-6 mt-6">
       <div>
-        <label className="block text-gray-700 mb-2">Appliances</label>
+        <h4 className="font-semibold mb-2">Appliances</h4>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {APPLIANCES.map(appliance => (
             <div key={appliance.name} className="flex items-center space-x-2">
@@ -316,62 +296,108 @@ const Calculator = () => {
           ))}
         </div>
       </div>
-      <div>
-        <label className="block text-gray-700 mb-2">Lighting Load (W/ft²)</label>
-        <input
-          type="number"
-          step="0.1"
-          value={inputs.lightingLoad || DEFAULT_VALUES.lightingLoad}
-          onChange={(e) => setInputs({ ...inputs, lightingLoad: Number(e.target.value) })}
-          className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
-        />
-      </div>
     </div>
   );
 
-  return (
-    <section id="calculator" className="py-20 bg-white">
-      <div className="container mx-auto px-4">
-        <h2 className="text-3xl font-bold text-center mb-12">AC Tonnage Calculator</h2>
-        
-        <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-lg p-8">
-          {/* Customization Level Selector */}
-          <div className="mb-8">
-            <h3 className="text-xl font-semibold mb-4">Choose Customization Level</h3>
-            <div className="grid grid-cols-3 gap-4">
-              {(['low', 'medium', 'high'] as CustomizationLevel[]).map((level) => (
-                <button
-                  key={level}
-                  onClick={() => {
-                    setCustomizationLevel(level);
-                    setInputs(prev => ({
-                      ...prev,
-                      customizationLevel: level
-                    }));
-                  }}
-                  className={`p-4 rounded-lg border-2 transition-all ${
-                    customizationLevel === level
-                      ? 'border-emerald-600 bg-emerald-50'
-                      : 'border-gray-200 hover:border-emerald-400'
-                  }`}
-                >
-                  <div className="font-semibold capitalize mb-2">{level}</div>
-                  <div className="text-sm text-gray-600">
-                    {level === 'low' && 'Basic calculation with minimal inputs'}
-                    {level === 'medium' && 'Balanced inputs for better accuracy'}
-                    {level === 'high' && 'Detailed inputs for precise results'}
-                  </div>
-                </button>
-              ))}
+  const renderResults = () => {
+    if (!breakdown) return null;
+
+    return (
+      <div className="mt-8 space-y-6 bg-white rounded-lg shadow-lg p-6">
+        <div className="text-center mb-8">
+          <h3 className="text-2xl font-bold text-emerald-600">
+            Recommended AC Size: {Math.ceil(breakdown.tonnage * 2) / 2} Tons
+          </h3>
+        </div>
+
+        {/* Room Sensible Heat Breakdown */}
+        <div className="bg-gray-50 p-4 rounded-lg">
+          <h4 className="font-semibold mb-4">Room Sensible Heat</h4>
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>Glass Heat:</div>
+              <div>{breakdown.roomSensible.glass.toFixed(2)} BTU/hr</div>
+              <div>Wall Heat:</div>
+              <div>{breakdown.roomSensible.wall.toFixed(2)} BTU/hr</div>
+              <div>Floor Heat:</div>
+              <div>{breakdown.roomSensible.floor.toFixed(2)} BTU/hr</div>
+              <div>Roof Heat:</div>
+              <div>{breakdown.roomSensible.roof.toFixed(2)} BTU/hr</div>
+              <div>People Heat:</div>
+              <div>{breakdown.roomSensible.people.toFixed(2)} BTU/hr</div>
+              <div>Equipment Heat:</div>
+              <div>{breakdown.roomSensible.equipment.toFixed(2)} BTU/hr</div>
+              <div>Lighting Heat:</div>
+              <div>{breakdown.roomSensible.lighting.toFixed(2)} BTU/hr</div>
+              <div>Duct Gain:</div>
+              <div>{breakdown.roomSensible.ductGain.toFixed(2)} BTU/hr</div>
+              <div>Fan Heat:</div>
+              <div>{breakdown.roomSensible.fanHeat.toFixed(2)} BTU/hr</div>
+              <div className="font-semibold">Total Sensible Heat:</div>
+              <div className="font-semibold">{breakdown.roomSensible.total.toFixed(2)} BTU/hr</div>
             </div>
           </div>
+        </div>
 
-          {/* Input Fields */}
-          <div className="space-y-6">
-            {renderLowLevelInputs()}
-            {customizationLevel !== 'low' && renderMediumLevelInputs()}
-            {customizationLevel === 'high' && renderHighLevelInputs()}
+        {/* Room Latent Heat Breakdown */}
+        <div className="bg-gray-50 p-4 rounded-lg">
+          <h4 className="font-semibold mb-4">Room Latent Heat</h4>
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>People Latent Heat:</div>
+              <div>{breakdown.roomLatent.people.toFixed(2)} BTU/hr</div>
+              <div>Infiltration Heat:</div>
+              <div>{breakdown.roomLatent.infiltration.toFixed(2)} BTU/hr</div>
+              <div className="font-semibold">Total Latent Heat:</div>
+              <div className="font-semibold">{breakdown.roomLatent.total.toFixed(2)} BTU/hr</div>
+            </div>
+          </div>
+        </div>
 
+        {/* Outside Air Heat */}
+        <div className="bg-gray-50 p-4 rounded-lg">
+          <h4 className="font-semibold mb-4">Outside Air Heat</h4>
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>Sensible Heat:</div>
+              <div>{breakdown.outsideAir.sensible.toFixed(2)} BTU/hr</div>
+              <div>Latent Heat:</div>
+              <div>{breakdown.outsideAir.latent.toFixed(2)} BTU/hr</div>
+              <div className="font-semibold">Total Outside Air Heat:</div>
+              <div className="font-semibold">{breakdown.outsideAir.total.toFixed(2)} BTU/hr</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Grand Total */}
+        <div className="bg-emerald-50 p-4 rounded-lg">
+          <h4 className="font-semibold mb-4">Grand Total Heat</h4>
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>Subtotal:</div>
+              <div>{breakdown.grandTotal.subtotal.toFixed(2)} BTU/hr</div>
+              <div>Safety Factor (3%):</div>
+              <div>{breakdown.grandTotal.safetyFactor.toFixed(2)} BTU/hr</div>
+              <div className="font-semibold text-lg">Final Total Heat:</div>
+              <div className="font-semibold text-lg">{breakdown.grandTotal.final.toFixed(2)} BTU/hr</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <section className="py-12 bg-gray-50">
+      <div className="container mx-auto px-4">
+        <h2 className="text-3xl font-bold text-center mb-8">AC Tonnage Calculator</h2>
+        <div className="max-w-4xl mx-auto">
+          {renderDifficultySelector()}
+          <div className="bg-white rounded-lg shadow-lg p-6">
+            {renderBasicInputs()}
+            {difficultyLevel !== 'low' && renderMediumInputs()}
+            {difficultyLevel === 'high' && renderHighInputs()}
+            
             <div className="mt-8">
               <button
                 onClick={calculateTonnage}
@@ -380,109 +406,8 @@ const Calculator = () => {
                 Calculate AC Tonnage
               </button>
             </div>
-
-            {result && (
-              <div className="mt-8 p-6 bg-emerald-50 rounded-lg">
-                <h3 className="text-xl font-semibold mb-4">AC Tonnage Calculation Results</h3>
-                
-                {/* Final Result */}
-                <div className="mb-6 p-4 bg-white rounded-lg shadow">
-                  <p className="text-3xl text-emerald-600 font-bold">
-                    Recommended AC Size: {Math.ceil(result * 2) / 2} Tons
-                  </p>
-                </div>
-
-                {/* Detailed Breakdown */}
-                <div className="space-y-6">
-                  {/* Room Sensible Heat */}
-                  <div className="bg-white p-4 rounded-lg shadow">
-                    <h4 className="font-semibold text-lg mb-2 text-emerald-700">Room Sensible Heat</h4>
-                    <div className="space-y-2">
-                      {calculationDetails.filter(d => 
-                        d.includes('Glass Heat') || 
-                        d.includes('Wall Heat') || 
-                        d.includes('People Sensible Heat') ||
-                        d.includes('Equipment Heat') ||
-                        d.includes('Lighting Heat')
-                      ).map((detail, index) => (
-                        <p key={index} className="text-sm text-gray-600 flex justify-between">
-                          <span>{detail.split(':')[0]}:</span>
-                          <span className="font-mono">{detail.split(':')[1]}</span>
-                        </p>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Heat Gains */}
-                  <div className="bg-white p-4 rounded-lg shadow">
-                    <h4 className="font-semibold text-lg mb-2 text-emerald-700">System Heat Gains</h4>
-                    <div className="space-y-2">
-                      {calculationDetails.filter(d => 
-                        d.includes('Duct Gain') || 
-                        d.includes('Fan Heat')
-                      ).map((detail, index) => (
-                        <p key={index} className="text-sm text-gray-600 flex justify-between">
-                          <span>{detail.split(':')[0]}:</span>
-                          <span className="font-mono">{detail.split(':')[1]}</span>
-                        </p>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Latent Heat */}
-                  <div className="bg-white p-4 rounded-lg shadow">
-                    <h4 className="font-semibold text-lg mb-2 text-emerald-700">Latent Heat</h4>
-                    <div className="space-y-2">
-                      {calculationDetails.filter(d => 
-                        d.includes('Room Latent Heat')
-                      ).map((detail, index) => (
-                        <p key={index} className="text-sm text-gray-600 flex justify-between">
-                          <span>{detail.split(':')[0]}:</span>
-                          <span className="font-mono">{detail.split(':')[1]}</span>
-                        </p>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Outside Air Heat */}
-                  <div className="bg-white p-4 rounded-lg shadow">
-                    <h4 className="font-semibold text-lg mb-2 text-emerald-700">Outside Air Heat</h4>
-                    <div className="space-y-2">
-                      {calculationDetails.filter(d => 
-                        d.includes('Outside Air')
-                      ).map((detail, index) => (
-                        <p key={index} className="text-sm text-gray-600 flex justify-between">
-                          <span>{detail.split(':')[0]}:</span>
-                          <span className="font-mono">{detail.split(':')[1]}</span>
-                        </p>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Total Heat */}
-                  <div className="bg-white p-4 rounded-lg shadow border-t-2 border-emerald-500">
-                    <h4 className="font-semibold text-lg mb-2 text-emerald-700">Total Heat Load</h4>
-                    <div className="space-y-2">
-                      {calculationDetails.filter(d => 
-                        d.includes('Effective Room Total') || 
-                        d.includes('Grand Total Heat')
-                      ).map((detail, index) => (
-                        <p key={index} className="text-sm text-gray-600 flex justify-between">
-                          <span>{detail.split(':')[0]}:</span>
-                          <span className="font-mono">{detail.split(':')[1]}</span>
-                        </p>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <p className="mt-6 text-sm text-gray-600 bg-yellow-50 p-4 rounded-lg">
-                  Note: This calculation is based on your input parameters and standard cooling load factors.
-                  For the most accurate results, please consult with an HVAC professional.
-                </p>
-              </div>
-            )}
           </div>
+          {renderResults()}
         </div>
       </div>
     </section>

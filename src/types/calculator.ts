@@ -1,140 +1,32 @@
-// City temperature data
-export interface CityTemperature {
-  dbt: number;  // Dry Bulb Temperature (°F)
-  wbt: number;  // Wet Bulb Temperature (°F)
-}
-
-export type CustomizationLevel = 'low' | 'medium' | 'high';
-export type RoofType = 'insulated' | 'uninsulated';
-
-export const CITY_TEMPERATURES: Record<string, CityTemperature> = {
-  'Ahmedabad': { dbt: 110, wbt: 78 },
-  'Mumbai': { dbt: 95, wbt: 83 },
-  'Pune': { dbt: 104, wbt: 76 },
-  'Jabalpur': { dbt: 108, wbt: 75 }
-};
-
-// Updated Heat transfer coefficients
-export const U_FACTORS = {
-  wall: 0.33,    // BTU/hr-ft²-°F
-  roof_insulated: 0.13,    // BTU/hr-ft²-°F
-  roof_uninsulated: 0.46,  // BTU/hr-ft²-°F
-  window: 1.13,  // BTU/hr-ft²-°F
-  door: 0.16     // BTU/hr-ft²-°F
-};
-
-// Safety factors
-export const SAFETY_FACTORS = {
-  correction: 9,
-  coilBypass: 0.12,
-  ductLeakage: 0.02,  // 2%
-  fanHeat: 0.05,      // 5%
-  heatLoad: 0.03      // 3%
-};
-
-// Constants
-export const CONSTANTS = {
-  sensibleHeat: 1.08,    // BTU/hr-CFM-°F
-  latentHeat: 0.68,      // BTU/hr-CFM-grains/lb
-  btuConversion: 3.412,  // W to BTU/hr
-  tonConversion: 12000,  // BTU/hr per ton
-  cfmPerPerson: 10,
-  defaultACH: 0.42,
-  personHeatGain: 600,   // BTU/hr
-  defaultLightingLoad: 1.2, // W/ft²
-  wallWeight: 60,        // lb/ft²
-  roofSunExposed: 40,    // lb/ft²
-  roofShaded: 16,        // lb/ft²
-  humidityRatio: 82      // grains/lb at 55% RH, WBT=61°F
-};
-
-// Updated Appliance data
-export const APPLIANCES = [
-  { name: 'LED Bulb', wattage: 10 },
-  { name: 'Fridge', wattage: 150 },
-  { name: 'Oven', wattage: 2000 },
-  { name: 'Computer', wattage: 300 },
-  { name: 'Fan', wattage: 75 }
-];
-
-// Input interfaces
-export interface RoomDimensions {
-  length: number;
-  width: number;
-  height: number;
-}
-
-export interface WindowDoorDetails {
-  windowCount: number;
-  windowArea: number;
-  doorCount: number;
-  doorArea: number;
-}
-
-export interface ApplianceCount {
-  [key: string]: number;
-}
-
-export interface CalculatorInputs {
-  // Low Level
-  customizationLevel: CustomizationLevel;
-  roomDimensions: RoomDimensions;
-  city: string;
-  indoorTemp: number;
-  relativeHumidity: number;
-  roofType: RoofType;
-
-  // Medium Level
-  windowDoorDetails?: WindowDoorDetails;
-  occupants?: number;
-  airChangesPerHour?: number;
-  isRoofSunExposed?: boolean;
-
-  // High Level
-  appliances?: ApplianceCount;
-  lightingLoad?: number;
-}
-
-export const DEFAULT_VALUES = {
-  // Low Level
-  roomDimensions: {
-    length: 15,
-    width: 12,
-    height: 10
-  },
-  city: 'Mumbai',
-  indoorTemp: 75,
-  relativeHumidity: 55,
-  roofType: 'uninsulated' as RoofType,
-
-  // Medium Level
-  windowDoorDetails: {
-    windowCount: 2,
-    windowArea: 15,
-    doorCount: 1,
-    doorArea: 20
-  },
-  occupants: 3,
-  airChangesPerHour: CONSTANTS.defaultACH,
-  isRoofSunExposed: true,
-
-  // High Level
-  lightingLoad: CONSTANTS.defaultLightingLoad,
-  appliances: {
-    'LED Bulb': 4,
-    'Fan': 2
-  }
-}; 
+export type DifficultyLevel = 'low' | 'medium' | 'high';
+export type Direction = 'N' | 'S' | 'E' | 'W' | 'NE' | 'NW' | 'SE' | 'SW';
+export type RoofCondition = 'exposed' | 'shaded' | 'water-covered' | 'insulated';
 
 export interface CityData {
-  db: number;  // Dry Bulb Temperature
-  wb: number;  // Wet Bulb Temperature
+  db: number;    // Dry Bulb Temperature
+  wb: number;    // Wet Bulb Temperature
   drange: number;
-  rh: number;  // Relative Humidity %
-  dp: number;  // Dew Point
+  rh: number;    // Relative Humidity %
+  dp: number;    // Dew Point
   grPerLb: number;  // Grains per Pound
 }
 
+export interface Window {
+  area: number;
+  direction: Direction;
+}
+
+export interface Wall {
+  area: number;
+  direction: Direction;
+}
+
+export interface Appliance {
+  name: string;
+  wattage: number; // in kW
+}
+
+// City Data Constants
 export const CITY_DATA: Record<string, CityData> = {
   'New Delhi': { db: 104, wb: 80, drange: 24, rh: 40, dp: 73, grPerLb: 62 },
   'Mumbai': { db: 92, wb: 86, drange: 6, rh: 85, dp: 83, grPerLb: 82 },
@@ -148,16 +40,104 @@ export const CITY_DATA: Record<string, CityData> = {
   'Lucknow': { db: 102, wb: 78, drange: 24, rh: 40, dp: 72, grPerLb: 60 }
 };
 
-export const HEAT_FACTORS = {
-  PERSON_SENSIBLE_HEAT: 255,
-  PERSON_LATENT_HEAT: 245,
-  EQUIPMENT_HEAT_FACTOR: 3410,
-  DUCT_GAIN: 0.02,  // 2%
-  FAN_HEAT_GAIN: 0.05,  // 5%
-  SAFETY_FACTOR: 0.03,  // 3%
-  VENTILATION_FACTOR: 0.42,
-  SENSIBLE_CONSTANT: 1.08,
-  LATENT_CONSTANT: 0.68,
-  BYPASS_FACTOR: 0.12,
-  TON_CONVERSION: 12000
-}; 
+// U-Factors
+export const U_FACTORS = {
+  glass: 0.30,
+  wall: 0.16,
+  floor: 0.02,
+  roofUninsulated: 0.15,
+  roofInsulated: 0.135
+};
+
+// Preset Appliances
+export const APPLIANCES: Appliance[] = [
+  { name: 'Lights', wattage: 0.05 },
+  { name: 'Oven/Microwave', wattage: 1.5 },
+  { name: 'Fridge', wattage: 0.20 },
+  { name: 'PC/Laptop', wattage: 0.125 },
+  { name: 'TV', wattage: 0.1 },
+  { name: 'Fan', wattage: 0.05 }
+];
+
+// Heat Load Constants
+export const HEAT_CONSTANTS = {
+  personSensible: 255,
+  personLatent: 245,
+  equipmentFactor: 3410,
+  lightingFactor: 3.4,
+  lightingLoad: 1.2,
+  ventilationFactor: 0.42,
+  bypassFactor: 0.12,
+  sensibleConstant: 1.08,
+  latentConstant: 0.68,
+  tonConversion: 12000,
+  cfmPerPerson: 10,
+  indoorTemp: 75,
+  indoorGrains: 60
+};
+
+// Safety Factors
+export const SAFETY_FACTORS = {
+  overall: 0.03,
+  supplyDuct: 0.02,
+  fanHeat: 0.05
+};
+
+// Solar Heat Gain through Glass (4 PM)
+export const SOLAR_HEAT_GAIN: Record<Direction, number> = {
+  'W': 163,
+  'SW': 85,
+  'NW': 138,
+  'N': 45,
+  'S': 45,
+  'E': 45,
+  'SE': 45,
+  'NE': 45
+};
+
+export interface CalculatorInputs {
+  difficultyLevel: DifficultyLevel;
+  roomDimensions: {
+    length: number;
+    breadth: number;
+    height: number;
+  };
+  city: string;
+  windows?: Window[];
+  walls?: Wall[];
+  roofCondition?: RoofCondition;
+  occupants?: number;
+  appliances?: Record<string, number>;
+  infiltrationRate?: number;
+}
+
+export interface CalculationBreakdown {
+  roomSensible: {
+    glass: number;
+    wall: number;
+    floor: number;
+    roof: number;
+    people: number;
+    equipment: number;
+    lighting: number;
+    ductGain: number;
+    fanHeat: number;
+    total: number;
+  };
+  roomLatent: {
+    people: number;
+    infiltration: number;
+    total: number;
+  };
+  outsideAir: {
+    sensible: number;
+    latent: number;
+    total: number;
+  };
+  grandTotal: {
+    subtotal: number;
+    safetyFactor: number;
+    final: number;
+  };
+  tonnage: number;
+} 
