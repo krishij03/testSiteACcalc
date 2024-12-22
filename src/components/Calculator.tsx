@@ -158,7 +158,7 @@ const Calculator = () => {
           />
         </div>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
           <label className="block text-gray-700 mb-2">City</label>
           <select
@@ -166,19 +166,14 @@ const Calculator = () => {
             onChange={(e) => setInputs({ ...inputs, city: e.target.value })}
             className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
           >
-            {Object.keys(CITY_TEMPERATURES).map(city => (
+            {Object.keys(CITY_DATA).map(city => (
               <option key={city} value={city}>{city}</option>
             ))}
           </select>
-        </div>
-        <div>
-          <label className="block text-gray-700 mb-2">Indoor Temperature (°F)</label>
-          <input
-            type="number"
-            value={inputs.indoorTemp}
-            onChange={(e) => setInputs({ ...inputs, indoorTemp: Number(e.target.value) })}
-            className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
-          />
+          <div className="mt-2 text-sm text-gray-600">
+            <p>DB: {CITY_DATA[inputs.city].db}°F, WB: {CITY_DATA[inputs.city].wb}°F</p>
+            <p>RH: {CITY_DATA[inputs.city].rh}%, DP: {CITY_DATA[inputs.city].dp}°F</p>
+          </div>
         </div>
         <div>
           <label className="block text-gray-700 mb-2">Roof Type</label>
@@ -388,20 +383,101 @@ const Calculator = () => {
 
             {result && (
               <div className="mt-8 p-6 bg-emerald-50 rounded-lg">
-                <h3 className="text-xl font-semibold mb-2">Recommended AC Tonnage:</h3>
-                <p className="text-3xl text-emerald-600 font-bold">
-                  {Math.ceil(result * 2) / 2} Tons
-                </p>
-                <div className="mt-4">
-                  <h4 className="font-semibold mb-2">Calculation Details:</h4>
-                  <ul className="space-y-1 text-sm text-gray-600">
-                    {calculationDetails.map((detail, index) => (
-                      <li key={index}>{detail}</li>
-                    ))}
-                  </ul>
+                <h3 className="text-xl font-semibold mb-4">AC Tonnage Calculation Results</h3>
+                
+                {/* Final Result */}
+                <div className="mb-6 p-4 bg-white rounded-lg shadow">
+                  <p className="text-3xl text-emerald-600 font-bold">
+                    Recommended AC Size: {Math.ceil(result * 2) / 2} Tons
+                  </p>
                 </div>
-                <p className="mt-4 text-sm text-gray-600">
-                  This calculation is based on your input parameters and standard cooling load factors.
+
+                {/* Detailed Breakdown */}
+                <div className="space-y-6">
+                  {/* Room Sensible Heat */}
+                  <div className="bg-white p-4 rounded-lg shadow">
+                    <h4 className="font-semibold text-lg mb-2 text-emerald-700">Room Sensible Heat</h4>
+                    <div className="space-y-2">
+                      {calculationDetails.filter(d => 
+                        d.includes('Glass Heat') || 
+                        d.includes('Wall Heat') || 
+                        d.includes('People Sensible Heat') ||
+                        d.includes('Equipment Heat') ||
+                        d.includes('Lighting Heat')
+                      ).map((detail, index) => (
+                        <p key={index} className="text-sm text-gray-600 flex justify-between">
+                          <span>{detail.split(':')[0]}:</span>
+                          <span className="font-mono">{detail.split(':')[1]}</span>
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Heat Gains */}
+                  <div className="bg-white p-4 rounded-lg shadow">
+                    <h4 className="font-semibold text-lg mb-2 text-emerald-700">System Heat Gains</h4>
+                    <div className="space-y-2">
+                      {calculationDetails.filter(d => 
+                        d.includes('Duct Gain') || 
+                        d.includes('Fan Heat')
+                      ).map((detail, index) => (
+                        <p key={index} className="text-sm text-gray-600 flex justify-between">
+                          <span>{detail.split(':')[0]}:</span>
+                          <span className="font-mono">{detail.split(':')[1]}</span>
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Latent Heat */}
+                  <div className="bg-white p-4 rounded-lg shadow">
+                    <h4 className="font-semibold text-lg mb-2 text-emerald-700">Latent Heat</h4>
+                    <div className="space-y-2">
+                      {calculationDetails.filter(d => 
+                        d.includes('Room Latent Heat')
+                      ).map((detail, index) => (
+                        <p key={index} className="text-sm text-gray-600 flex justify-between">
+                          <span>{detail.split(':')[0]}:</span>
+                          <span className="font-mono">{detail.split(':')[1]}</span>
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Outside Air Heat */}
+                  <div className="bg-white p-4 rounded-lg shadow">
+                    <h4 className="font-semibold text-lg mb-2 text-emerald-700">Outside Air Heat</h4>
+                    <div className="space-y-2">
+                      {calculationDetails.filter(d => 
+                        d.includes('Outside Air')
+                      ).map((detail, index) => (
+                        <p key={index} className="text-sm text-gray-600 flex justify-between">
+                          <span>{detail.split(':')[0]}:</span>
+                          <span className="font-mono">{detail.split(':')[1]}</span>
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Total Heat */}
+                  <div className="bg-white p-4 rounded-lg shadow border-t-2 border-emerald-500">
+                    <h4 className="font-semibold text-lg mb-2 text-emerald-700">Total Heat Load</h4>
+                    <div className="space-y-2">
+                      {calculationDetails.filter(d => 
+                        d.includes('Effective Room Total') || 
+                        d.includes('Grand Total Heat')
+                      ).map((detail, index) => (
+                        <p key={index} className="text-sm text-gray-600 flex justify-between">
+                          <span>{detail.split(':')[0]}:</span>
+                          <span className="font-mono">{detail.split(':')[1]}</span>
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <p className="mt-6 text-sm text-gray-600 bg-yellow-50 p-4 rounded-lg">
+                  Note: This calculation is based on your input parameters and standard cooling load factors.
                   For the most accurate results, please consult with an HVAC professional.
                 </p>
               </div>
