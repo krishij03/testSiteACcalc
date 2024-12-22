@@ -8,7 +8,9 @@ import {
   U_FACTORS,
   SAFETY_FACTORS,
   CONSTANTS,
-  RoofType
+  RoofType,
+  CITY_DATA,
+  HEAT_FACTORS
 } from '../types/calculator';
 
 const Calculator = () => {
@@ -26,112 +28,92 @@ const Calculator = () => {
 
   const calculateTonnage = () => {
     const details: string[] = [];
-    let totalBTU = 0;
-
-    // Get room dimensions
+    const cityData = CITY_DATA[inputs.city];
     const { length, width, height } = inputs.roomDimensions;
     const roomArea = length * width;
     const roomVolume = roomArea * height;
-    
-    // Get temperatures
-    const cityTemp = CITY_TEMPERATURES[inputs.city];
-    const deltaT = inputs.indoorTemp - cityTemp.dbt;
 
-    // 1. Sensible Heat Through Walls
+    // 1. Calculate Room Sensible Heat
+    let roomSensibleHeat = 0;
+
+    // Glass heat
+    if (inputs.windowDoorDetails?.windowArea) {
+      const glassHeat = inputs.windowDoorDetails.windowArea * cityData.drange * U_FACTORS.window;
+      roomSensibleHeat += glassHeat;
+      details.push(`Glass Heat: ${glassHeat.toFixed(2)} BTU/hr`);
+    }
+
+    // Wall heat
     const wallArea = 2 * (length + width) * height;
-    const Q_walls = U_FACTORS.wall * wallArea * Math.abs(deltaT);
-    details.push(`Wall Heat Load: ${Q_walls.toFixed(2)} BTU/hr`);
-    totalBTU += Q_walls;
+    const wallHeat = wallArea * cityData.drange * U_FACTORS.wall;
+    roomSensibleHeat += wallHeat;
+    details.push(`Wall Heat: ${wallHeat.toFixed(2)} BTU/hr`);
 
-    // 2. Roof Heat Load
-    const roofArea = length * width;
-    const roofUFactor = inputs.roofType === 'insulated' ? U_FACTORS.roof_insulated : U_FACTORS.roof_uninsulated;
-    const Q_roof = roofUFactor * roofArea * Math.abs(deltaT);
-    details.push(`Roof Heat Load (${inputs.roofType}): ${Q_roof.toFixed(2)} BTU/hr`);
-    totalBTU += Q_roof;
+    // People heat
+    const peopleHeat = (inputs.occupants || 0) * HEAT_FACTORS.PERSON_SENSIBLE_HEAT;
+    roomSensibleHeat += peopleHeat;
+    details.push(`People Sensible Heat: ${peopleHeat.toFixed(2)} BTU/hr`);
 
-    // Add roof weight factor if sun exposed
-    if (inputs.isRoofSunExposed) {
-      const roofWeightFactor = CONSTANTS.roofSunExposed / CONSTANTS.roofShaded;
-      totalBTU *= roofWeightFactor;
-      details.push(`Roof Sun Exposure Factor Applied: ${roofWeightFactor.toFixed(2)}x`);
-    }
-
-    // 3. Windows and Doors (Medium and High levels)
-    if (inputs.windowDoorDetails) {
-      const { windowCount, windowArea, doorCount, doorArea } = inputs.windowDoorDetails;
-      const totalWindowArea = windowCount * windowArea;
-      const totalDoorArea = doorCount * doorArea;
-
-      const Q_windows = U_FACTORS.window * totalWindowArea * Math.abs(deltaT);
-      const Q_doors = U_FACTORS.door * totalDoorArea * Math.abs(deltaT);
-
-      details.push(`Window Heat Load: ${Q_windows.toFixed(2)} BTU/hr`);
-      details.push(`Door Heat Load: ${Q_doors.toFixed(2)} BTU/hr`);
-
-      totalBTU += Q_windows + Q_doors;
-    }
-
-    // 4. Ventilation Load
-    if (inputs.airChangesPerHour) {
-      // Fresh air requirement
-      const occupantCFM = (inputs.occupants || 0) * CONSTANTS.cfmPerPerson;
-      const volumeCFM = (roomVolume * inputs.airChangesPerHour) / 60;
-      const totalCFM = Math.max(occupantCFM, volumeCFM);
-
-      // Sensible heat
-      const Q_ventilation_sensible = CONSTANTS.sensibleHeat * totalCFM * Math.abs(deltaT);
-      // Latent heat
-      const Q_ventilation_latent = CONSTANTS.latentHeat * totalCFM * CONSTANTS.humidityRatio;
-
-      details.push(`Ventilation Sensible Load: ${Q_ventilation_sensible.toFixed(2)} BTU/hr`);
-      details.push(`Ventilation Latent Load: ${Q_ventilation_latent.toFixed(2)} BTU/hr`);
-
-      totalBTU += Q_ventilation_sensible + Q_ventilation_latent;
-    }
-
-    // 5. Occupant Load
-    if (inputs.occupants) {
-      const Q_people = inputs.occupants * CONSTANTS.personHeatGain;
-      details.push(`Occupant Load: ${Q_people.toFixed(2)} BTU/hr`);
-      totalBTU += Q_people;
-    }
-
-    // 6. Appliance Load
+    // Equipment heat
     if (inputs.appliances) {
-      let applianceWattage = 0;
+      let equipmentKW = 0;
       Object.entries(inputs.appliances).forEach(([name, count]) => {
         const appliance = APPLIANCES.find(a => a.name === name);
         if (appliance) {
-          applianceWattage += appliance.wattage * count;
+          equipmentKW += (appliance.wattage * count) / 1000; // Convert to KW
         }
       });
-      const Q_appliances = applianceWattage * CONSTANTS.btuConversion;
-      details.push(`Appliance Load: ${Q_appliances.toFixed(2)} BTU/hr`);
-      totalBTU += Q_appliances;
+      const equipmentHeat = equipmentKW * HEAT_FACTORS.EQUIPMENT_HEAT_FACTOR;
+      roomSensibleHeat += equipmentHeat;
+      details.push(`Equipment Heat: ${equipmentHeat.toFixed(2)} BTU/hr`);
     }
 
-    // 7. Lighting Load
+    // Lighting heat
     if (inputs.lightingLoad) {
-      const Q_lighting = inputs.lightingLoad * roomArea * CONSTANTS.btuConversion;
-      details.push(`Lighting Load: ${Q_lighting.toFixed(2)} BTU/hr`);
-      totalBTU += Q_lighting;
+      const lightingHeat = inputs.lightingLoad * roomArea;
+      roomSensibleHeat += lightingHeat;
+      details.push(`Lighting Heat: ${lightingHeat.toFixed(2)} BTU/hr`);
     }
 
-    // Apply safety factors
-    const ductLoss = totalBTU * SAFETY_FACTORS.ductLeakage;
-    const fanHeat = totalBTU * SAFETY_FACTORS.fanHeat;
-    const safetyLoad = totalBTU * SAFETY_FACTORS.heatLoad;
-    
-    totalBTU += ductLoss + fanHeat + safetyLoad;
-    
-    details.push(`Duct Loss: ${ductLoss.toFixed(2)} BTU/hr`);
+    // Add duct and fan heat gains
+    const ductGain = roomSensibleHeat * HEAT_FACTORS.DUCT_GAIN;
+    const fanHeat = roomSensibleHeat * HEAT_FACTORS.FAN_HEAT_GAIN;
+    roomSensibleHeat += ductGain + fanHeat;
+    details.push(`Duct Gain: ${ductGain.toFixed(2)} BTU/hr`);
     details.push(`Fan Heat: ${fanHeat.toFixed(2)} BTU/hr`);
-    details.push(`Safety Load: ${safetyLoad.toFixed(2)} BTU/hr`);
-    details.push(`Total Heat Load: ${totalBTU.toFixed(2)} BTU/hr`);
+
+    // 2. Calculate Room Latent Heat
+    // Calculate ventilation rate
+    const ventByArea = (roomVolume * HEAT_FACTORS.VENTILATION_FACTOR) / 60;
+    const ventByPeople = (inputs.occupants || 0) * 10;
+    const ventilation = Math.max(ventByArea, ventByPeople);
+
+    const roomLatentHeat = (inputs.occupants || 0) * HEAT_FACTORS.PERSON_LATENT_HEAT +
+      (ventilation * (cityData.grPerLb - 70) * HEAT_FACTORS.LATENT_CONSTANT * HEAT_FACTORS.BYPASS_FACTOR);
     
+    details.push(`Room Latent Heat: ${roomLatentHeat.toFixed(2)} BTU/hr`);
+
+    // 3. Calculate Outside Air Heat
+    const outsideAirSensible = ventilation * cityData.drange * 
+      (1 - HEAT_FACTORS.BYPASS_FACTOR) * HEAT_FACTORS.SENSIBLE_CONSTANT;
+    
+    const outsideAirLatent = ventilation * (cityData.grPerLb - 70) * 
+      (1 - HEAT_FACTORS.BYPASS_FACTOR) * HEAT_FACTORS.LATENT_CONSTANT;
+
+    details.push(`Outside Air Sensible Heat: ${outsideAirSensible.toFixed(2)} BTU/hr`);
+    details.push(`Outside Air Latent Heat: ${outsideAirLatent.toFixed(2)} BTU/hr`);
+
+    // Calculate Grand Total Heat
+    const effectiveRoomTotal = roomSensibleHeat + roomLatentHeat;
+    const grandTotalSubtotal = effectiveRoomTotal + outsideAirSensible + outsideAirLatent;
+    const safetyFactor = grandTotalSubtotal * HEAT_FACTORS.SAFETY_FACTOR;
+    const grandTotal = grandTotalSubtotal + safetyFactor;
+
+    details.push(`Effective Room Total: ${effectiveRoomTotal.toFixed(2)} BTU/hr`);
+    details.push(`Grand Total Heat: ${grandTotal.toFixed(2)} BTU/hr`);
+
     // Convert to Tons
-    const tons = totalBTU / CONSTANTS.tonConversion;
+    const tons = grandTotal / HEAT_FACTORS.TON_CONVERSION;
     setResult(tons);
     setCalculationDetails(details);
   };

@@ -125,3 +125,39 @@ export const DEFAULT_VALUES = {
     'Fan': 2
   }
 }; 
+
+export interface CityData {
+  db: number;  // Dry Bulb Temperature
+  wb: number;  // Wet Bulb Temperature
+  drange: number;
+  rh: number;  // Relative Humidity %
+  dp: number;  // Dew Point
+  grPerLb: number;  // Grains per Pound
+}
+
+export const CITY_DATA: Record<string, CityData> = {
+  'New Delhi': { db: 104, wb: 80, drange: 24, rh: 40, dp: 73, grPerLb: 62 },
+  'Mumbai': { db: 92, wb: 86, drange: 6, rh: 85, dp: 83, grPerLb: 82 },
+  'Bengaluru': { db: 86, wb: 74, drange: 12, rh: 60, dp: 68, grPerLb: 50 },
+  'Kolkata': { db: 95, wb: 88, drange: 7, rh: 75, dp: 85, grPerLb: 78 },
+  'Chennai': { db: 100, wb: 91, drange: 9, rh: 70, dp: 86, grPerLb: 84 },
+  'Hyderabad': { db: 95, wb: 82, drange: 13, rh: 55, dp: 76, grPerLb: 67 },
+  'Ahmedabad': { db: 108, wb: 84, drange: 24, rh: 35, dp: 71, grPerLb: 58 },
+  'Pune': { db: 90, wb: 76, drange: 14, rh: 50, dp: 72, grPerLb: 54 },
+  'Jaipur': { db: 106, wb: 80, drange: 26, rh: 30, dp: 70, grPerLb: 55 },
+  'Lucknow': { db: 102, wb: 78, drange: 24, rh: 40, dp: 72, grPerLb: 60 }
+};
+
+export const HEAT_FACTORS = {
+  PERSON_SENSIBLE_HEAT: 255,
+  PERSON_LATENT_HEAT: 245,
+  EQUIPMENT_HEAT_FACTOR: 3410,
+  DUCT_GAIN: 0.02,  // 2%
+  FAN_HEAT_GAIN: 0.05,  // 5%
+  SAFETY_FACTOR: 0.03,  // 3%
+  VENTILATION_FACTOR: 0.42,
+  SENSIBLE_CONSTANT: 1.08,
+  LATENT_CONSTANT: 0.68,
+  BYPASS_FACTOR: 0.12,
+  TON_CONVERSION: 12000
+}; 
