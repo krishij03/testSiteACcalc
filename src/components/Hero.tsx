@@ -1,6 +1,15 @@
 import React from 'react';
 
 const Hero = () => {
+  const scrollToCalculator = () => {
+    const calculator = document.getElementById('calculator');
+    if (calculator) {
+      calculator.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      // Add offset for fixed navbar
+      window.scrollBy(0, -64); // Adjust this value based on your navbar height
+    }
+  };
+
   return (
     <section id="home" className="pt-20 bg-gradient-to-br from-emerald-50 to-white">
       <div className="container mx-auto px-4 py-20">

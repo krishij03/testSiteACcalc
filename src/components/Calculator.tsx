@@ -36,6 +36,18 @@ const DEFAULT_INPUTS: CalculatorInputs = {
 // Add medium difficulty defaults
 const MEDIUM_DEFAULTS = {
   occupants: 3,
+  roofCondition: 'exposed' as RoofCondition,
+  // Preset windows and walls (not shown in UI for medium)
+  windows: [
+    { area: 15, direction: 'W' as Direction },
+    { area: 15, direction: 'E' as Direction }
+  ],
+  walls: [
+    { area: 120, direction: 'N' as Direction },
+    { area: 100, direction: 'E' as Direction },
+    { area: 120, direction: 'S' as Direction },
+    { area: 100, direction: 'W' as Direction }
+  ],
   appliances: {
     'Lights': 2,
     'Fan': 1
@@ -46,6 +58,7 @@ const Calculator = () => {
   const [difficultyLevel, setDifficultyLevel] = useState<DifficultyLevel>('low');
   const [inputs, setInputs] = useState<CalculatorInputs>(DEFAULT_INPUTS);
   const [breakdown, setBreakdown] = useState<CalculationBreakdown | null>(null);
+  const [showCalculations, setShowCalculations] = useState(false);
 
   const validateInputs = () => {
     // Basic validations
@@ -274,19 +287,11 @@ const Calculator = () => {
   const handleDifficultyChange = (level: DifficultyLevel) => {
     setDifficultyLevel(level);
     
-    // Reset inputs based on difficulty level
     switch(level) {
       case 'low':
         setInputs({
           ...DEFAULT_INPUTS,
-          difficultyLevel: level,
-          windows: [
-            { area: 15, direction: 'W' },
-            { area: 15, direction: 'E' }
-          ],
-          occupants: 2,
-          roofCondition: 'exposed',
-          appliances: { 'Lights': 2 }
+          difficultyLevel: level
         });
         break;
         
@@ -295,6 +300,8 @@ const Calculator = () => {
           ...inputs,
           difficultyLevel: level,
           occupants: MEDIUM_DEFAULTS.occupants,
+          windows: MEDIUM_DEFAULTS.windows,
+          walls: MEDIUM_DEFAULTS.walls,
           appliances: MEDIUM_DEFAULTS.appliances
         });
         break;
@@ -303,7 +310,6 @@ const Calculator = () => {
         setInputs({
           ...inputs,
           difficultyLevel: level,
-          // Clear presets for high difficulty
           windows: [],
           walls: [],
           occupants: undefined,
@@ -416,7 +422,7 @@ const Calculator = () => {
           <input
             type="number"
             min="1"
-            value={inputs.occupants || 2}
+            value={inputs.occupants || 3}
             onChange={(e) => setInputs({ ...inputs, occupants: Number(e.target.value) })}
             className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
           />
@@ -436,131 +442,7 @@ const Calculator = () => {
         </div>
       </div>
 
-      {/* Windows Section */}
-      <div>
-        <h4 className="font-semibold mb-2">Windows</h4>
-        <div className="space-y-4">
-          {(inputs.windows || [{ area: 15, direction: 'W' }]).map((window, index) => (
-            <div key={index} className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
-              <div>
-                <label className="block text-gray-700 mb-2">Window {index + 1} Area (ft²)</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={window.area}
-                  onChange={(e) => {
-                    const newWindows = [...(inputs.windows || [])];
-                    newWindows[index] = { ...window, area: Number(e.target.value) };
-                    setInputs({ ...inputs, windows: newWindows });
-                  }}
-                  className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-700 mb-2">Direction</label>
-                <select
-                  value={window.direction}
-                  onChange={(e) => {
-                    const newWindows = [...(inputs.windows || [])];
-                    newWindows[index] = { ...window, direction: e.target.value as Direction };
-                    setInputs({ ...inputs, windows: newWindows });
-                  }}
-                  className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
-                >
-                  {Object.keys(SOLAR_HEAT_GAIN).map(direction => (
-                    <option key={direction} value={direction}>{direction}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex items-end">
-                <button
-                  onClick={() => {
-                    const newWindows = [...(inputs.windows || [])];
-                    newWindows.splice(index, 1);
-                    setInputs({ ...inputs, windows: newWindows });
-                  }}
-                  className="p-2 text-red-600 hover:text-red-700"
-                >
-                  Remove
-                </button>
-              </div>
-            </div>
-          ))}
-          <button
-            onClick={() => {
-              const newWindows = [...(inputs.windows || []), { area: 15, direction: 'W' as Direction }];
-              setInputs({ ...inputs, windows: newWindows });
-            }}
-            className="w-full p-2 bg-emerald-50 text-emerald-600 rounded hover:bg-emerald-100"
-          >
-            Add Window
-          </button>
-        </div>
-      </div>
-
-      {/* Walls Section */}
-      <div>
-        <h4 className="font-semibold mb-2">Walls</h4>
-        <div className="space-y-4">
-          {(inputs.walls || []).map((wall, index) => (
-            <div key={index} className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
-              <div>
-                <label className="block text-gray-700 mb-2">Wall {index + 1} Area (ft²)</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={wall.area}
-                  onChange={(e) => {
-                    const newWalls = [...(inputs.walls || [])];
-                    newWalls[index] = { ...wall, area: Number(e.target.value) };
-                    setInputs({ ...inputs, walls: newWalls });
-                  }}
-                  className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-700 mb-2">Direction</label>
-                <select
-                  value={wall.direction}
-                  onChange={(e) => {
-                    const newWalls = [...(inputs.walls || [])];
-                    newWalls[index] = { ...wall, direction: e.target.value as Direction };
-                    setInputs({ ...inputs, walls: newWalls });
-                  }}
-                  className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
-                >
-                  {Object.keys(SOLAR_HEAT_GAIN).map(direction => (
-                    <option key={direction} value={direction}>{direction}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex items-end">
-                <button
-                  onClick={() => {
-                    const newWalls = [...(inputs.walls || [])];
-                    newWalls.splice(index, 1);
-                    setInputs({ ...inputs, walls: newWalls });
-                  }}
-                  className="p-2 text-red-600 hover:text-red-700"
-                >
-                  Remove
-                </button>
-              </div>
-            </div>
-          ))}
-          <button
-            onClick={() => {
-              const newWalls = [...(inputs.walls || []), { area: 0, direction: 'N' as Direction }];
-              setInputs({ ...inputs, walls: newWalls });
-            }}
-            className="w-full p-2 bg-emerald-50 text-emerald-600 rounded hover:bg-emerald-100"
-          >
-            Add Wall
-          </button>
-        </div>
-      </div>
-
-      {/* Equipment Section - Single consolidated section */}
+      {/* Equipment Section */}
       <div>
         <h4 className="font-semibold mb-2">Equipment</h4>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -591,7 +473,129 @@ const Calculator = () => {
 
   const renderHighInputs = () => (
     <div className="space-y-6 mt-6">
-      {/* Special Infiltration Rate (High difficulty only) */}
+      {/* Window Settings */}
+      <div>
+        <h4 className="font-semibold mb-2">Windows</h4>
+        <div className="space-y-4">
+          {(inputs.windows || []).map((window, index) => (
+            <div key={index} className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
+              <div>
+                <label className="block text-gray-700 mb-2">Window {index + 1} Area (ft²)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={window.area}
+                  onChange={(e) => {
+                    const newWindows = [...(inputs.windows || [])];
+                    newWindows[index] = { ...window, area: Number(e.target.value) };
+                    setInputs({ ...inputs, windows: newWindows });
+                  }}
+                  className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-700 mb-2">Direction</label>
+                <select
+                  value={window.direction}
+                  onChange={(e) => {
+                    const newWindows = [...(inputs.windows || [])];
+                    newWindows[index] = { ...window, direction: e.target.value as Direction };
+                    setInputs({ ...inputs, windows: newWindows });
+                  }}
+                  className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
+                >
+                  {(['N', 'S', 'E', 'W', 'NE', 'NW', 'SE', 'SW'] as Direction[]).map(dir => (
+                    <option key={dir} value={dir}>{dir}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-end">
+                <button
+                  onClick={() => {
+                    const newWindows = inputs.windows?.filter((_, i) => i !== index) || [];
+                    setInputs({ ...inputs, windows: newWindows });
+                  }}
+                  className="w-full p-2 bg-red-50 text-red-600 rounded hover:bg-red-100"
+                >
+                  Remove Window
+                </button>
+              </div>
+            </div>
+          ))}
+          <button
+            onClick={() => {
+              const newWindows = [...(inputs.windows || []), { area: 15, direction: 'W' as Direction }];
+              setInputs({ ...inputs, windows: newWindows });
+            }}
+            className="w-full p-2 bg-emerald-50 text-emerald-600 rounded hover:bg-emerald-100"
+          >
+            Add Window
+          </button>
+        </div>
+      </div>
+
+      {/* Wall Settings */}
+      <div>
+        <h4 className="font-semibold mb-2">Walls</h4>
+        <div className="space-y-4">
+          {(inputs.walls || []).map((wall, index) => (
+            <div key={index} className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
+              <div>
+                <label className="block text-gray-700 mb-2">Wall {index + 1} Area (ft²)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={wall.area}
+                  onChange={(e) => {
+                    const newWalls = [...(inputs.walls || [])];
+                    newWalls[index] = { ...wall, area: Number(e.target.value) };
+                    setInputs({ ...inputs, walls: newWalls });
+                  }}
+                  className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-700 mb-2">Direction</label>
+                <select
+                  value={wall.direction}
+                  onChange={(e) => {
+                    const newWalls = [...(inputs.walls || [])];
+                    newWalls[index] = { ...wall, direction: e.target.value as Direction };
+                    setInputs({ ...inputs, walls: newWalls });
+                  }}
+                  className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
+                >
+                  {(['N', 'S', 'E', 'W'] as Direction[]).map(dir => (
+                    <option key={dir} value={dir}>{dir}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-end">
+                <button
+                  onClick={() => {
+                    const newWalls = inputs.walls?.filter((_, i) => i !== index) || [];
+                    setInputs({ ...inputs, walls: newWalls });
+                  }}
+                  className="w-full p-2 bg-red-50 text-red-600 rounded hover:bg-red-100"
+                >
+                  Remove Wall
+                </button>
+              </div>
+            </div>
+          ))}
+          <button
+            onClick={() => {
+              const newWalls = [...(inputs.walls || []), { area: 0, direction: 'N' as Direction }];
+              setInputs({ ...inputs, walls: newWalls });
+            }}
+            className="w-full p-2 bg-emerald-50 text-emerald-600 rounded hover:bg-emerald-100"
+          >
+            Add Wall
+          </button>
+        </div>
+      </div>
+
+      {/* Special Infiltration Rate */}
       <div>
         <label className="block text-gray-700 mb-2">Special Infiltration Rate (optional)</label>
         <input
@@ -608,8 +612,6 @@ const Calculator = () => {
           Leave empty to use standard calculation method
         </p>
       </div>
-
-      {/* Any other high-difficulty-specific inputs can go here */}
     </div>
   );
 
@@ -618,126 +620,127 @@ const Calculator = () => {
 
     return (
       <div className="mt-8 space-y-6 bg-white rounded-lg shadow-lg p-6">
-        <div className="text-center mb-8">
-          <h3 className="text-2xl font-bold text-emerald-600">
+        <div className="text-center">
+          <h3 className="text-2xl font-bold text-emerald-600 mb-4">
             Recommended AC Size: {Math.ceil(breakdown.tonnage * 2) / 2} Tons
           </h3>
+          
+          <button
+            onClick={() => setShowCalculations(!showCalculations)}
+            className="mt-4 px-4 py-2 bg-emerald-100 text-emerald-700 rounded hover:bg-emerald-200 transition-colors"
+          >
+            {showCalculations ? 'Hide Calculations' : 'Show Detailed Calculations'}
+          </button>
         </div>
 
-        {/* Calculation Steps Breakdown */}
-        <div className="space-y-6">
-          {/* Step 1: Room Sensible Heat */}
-          <div className="bg-gray-50 p-4 rounded-lg">
-            <h4 className="font-semibold mb-4">Step 1: Room Sensible Heat</h4>
-            <div className="space-y-2 text-sm">
-              <div className="grid grid-cols-2 gap-4">
-                <div>Glass Heat:</div>
-                <div>{breakdown.roomSensible.glass.toFixed(2)} BTU/hr</div>
-                <div>Wall Heat:</div>
-                <div>{breakdown.roomSensible.wall.toFixed(2)} BTU/hr</div>
-                <div>Floor Heat:</div>
-                <div>{breakdown.roomSensible.floor.toFixed(2)} BTU/hr</div>
-                <div>Roof Heat:</div>
-                <div>{breakdown.roomSensible.roof.toFixed(2)} BTU/hr</div>
-                <div>People Heat:</div>
-                <div>{breakdown.roomSensible.people.toFixed(2)} BTU/hr</div>
-                <div>Equipment Heat:</div>
-                <div>{breakdown.roomSensible.equipment.toFixed(2)} BTU/hr</div>
-                <div>Lighting Heat:</div>
-                <div>{breakdown.roomSensible.lighting.toFixed(2)} BTU/hr</div>
-                <div className="text-emerald-600">Supply Duct Gain (2%):</div>
-                <div className="text-emerald-600">{breakdown.roomSensible.ductGain.toFixed(2)} BTU/hr</div>
-                <div className="text-emerald-600">Fan Heat Gain (5%):</div>
-                <div className="text-emerald-600">{breakdown.roomSensible.fanHeat.toFixed(2)} BTU/hr</div>
-                <div className="font-semibold border-t pt-2">Total Sensible Heat:</div>
-                <div className="font-semibold border-t pt-2">{breakdown.roomSensible.total.toFixed(2)} BTU/hr</div>
+        {showCalculations && (
+          <div className="space-y-6 mt-4">
+            <div className="space-y-6">
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h4 className="font-semibold mb-4">Step 1: Room Sensible Heat</h4>
+                <div className="space-y-2 text-sm">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>Glass Heat:</div>
+                    <div>{breakdown.roomSensible.glass.toFixed(2)} BTU/hr</div>
+                    <div>Wall Heat:</div>
+                    <div>{breakdown.roomSensible.wall.toFixed(2)} BTU/hr</div>
+                    <div>Floor Heat:</div>
+                    <div>{breakdown.roomSensible.floor.toFixed(2)} BTU/hr</div>
+                    <div>Roof Heat:</div>
+                    <div>{breakdown.roomSensible.roof.toFixed(2)} BTU/hr</div>
+                    <div>People Heat:</div>
+                    <div>{breakdown.roomSensible.people.toFixed(2)} BTU/hr</div>
+                    <div>Equipment Heat:</div>
+                    <div>{breakdown.roomSensible.equipment.toFixed(2)} BTU/hr</div>
+                    <div>Lighting Heat:</div>
+                    <div>{breakdown.roomSensible.lighting.toFixed(2)} BTU/hr</div>
+                    <div className="text-emerald-600">Supply Duct Gain (2%):</div>
+                    <div className="text-emerald-600">{breakdown.roomSensible.ductGain.toFixed(2)} BTU/hr</div>
+                    <div className="text-emerald-600">Fan Heat Gain (5%):</div>
+                    <div className="text-emerald-600">{breakdown.roomSensible.fanHeat.toFixed(2)} BTU/hr</div>
+                    <div className="font-semibold border-t pt-2">Total Sensible Heat:</div>
+                    <div className="font-semibold border-t pt-2">{breakdown.roomSensible.total.toFixed(2)} BTU/hr</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h4 className="font-semibold mb-4">Step 2: Room Latent Heat</h4>
+                <div className="space-y-2 text-sm">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>People Latent Heat:</div>
+                    <div>{breakdown.roomLatent.people.toFixed(2)} BTU/hr</div>
+                    <div>Infiltration Heat:</div>
+                    <div>{breakdown.roomLatent.infiltration.toFixed(2)} BTU/hr</div>
+                    <div className="font-semibold border-t pt-2">Total Latent Heat:</div>
+                    <div className="font-semibold border-t pt-2">{breakdown.roomLatent.total.toFixed(2)} BTU/hr</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h4 className="font-semibold mb-4">Step 3: Outside Air Heat</h4>
+                <div className="space-y-2 text-sm">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>Outside Air Sensible:</div>
+                    <div>{breakdown.outsideAir.sensible.toFixed(2)} BTU/hr</div>
+                    <div>Outside Air Latent:</div>
+                    <div>{breakdown.outsideAir.latent.toFixed(2)} BTU/hr</div>
+                    <div className="font-semibold border-t pt-2">Total Outside Air Heat:</div>
+                    <div className="font-semibold border-t pt-2">{breakdown.outsideAir.total.toFixed(2)} BTU/hr</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-emerald-50 p-4 rounded-lg">
+                <h4 className="font-semibold mb-4">Step 4: Grand Total Heat</h4>
+                <div className="space-y-2 text-sm">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>Room Sensible Heat:</div>
+                    <div>{breakdown.roomSensible.total.toFixed(2)} BTU/hr</div>
+                    <div>Room Latent Heat:</div>
+                    <div>{breakdown.roomLatent.total.toFixed(2)} BTU/hr</div>
+                    <div>Outside Air Heat:</div>
+                    <div>{breakdown.outsideAir.total.toFixed(2)} BTU/hr</div>
+                    <div className="font-semibold">Subtotal:</div>
+                    <div className="font-semibold">{breakdown.grandTotal.subtotal.toFixed(2)} BTU/hr</div>
+                    <div className="text-emerald-600">Safety Factor (3%):</div>
+                    <div className="text-emerald-600">{breakdown.grandTotal.safetyFactor.toFixed(2)} BTU/hr</div>
+                    <div className="font-semibold text-lg border-t pt-2">Final Total Heat:</div>
+                    <div className="font-semibold text-lg border-t pt-2">{breakdown.grandTotal.final.toFixed(2)} BTU/hr</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-emerald-100 p-4 rounded-lg">
+                <h4 className="font-semibold mb-4">Step 5: Tonnage Calculation</h4>
+                <div className="text-sm">
+                  <p>Final Total Heat ÷ 12,000 BTU/hr/ton = {breakdown.tonnage.toFixed(3)} Tons</p>
+                  <p className="font-semibold mt-2">Recommended Size (rounded up to nearest 0.5 ton):</p>
+                  <p className="text-2xl font-bold text-emerald-700">{Math.ceil(breakdown.tonnage * 2) / 2} Tons</p>
+                </div>
               </div>
             </div>
           </div>
-
-          {/* Step 2: Room Latent Heat */}
-          <div className="bg-gray-50 p-4 rounded-lg">
-            <h4 className="font-semibold mb-4">Step 2: Room Latent Heat</h4>
-            <div className="space-y-2 text-sm">
-              <div className="grid grid-cols-2 gap-4">
-                <div>People Latent Heat:</div>
-                <div>{breakdown.roomLatent.people.toFixed(2)} BTU/hr</div>
-                <div>Infiltration Heat:</div>
-                <div>{breakdown.roomLatent.infiltration.toFixed(2)} BTU/hr</div>
-                <div className="font-semibold border-t pt-2">Total Latent Heat:</div>
-                <div className="font-semibold border-t pt-2">{breakdown.roomLatent.total.toFixed(2)} BTU/hr</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Step 3: Outside Air Heat */}
-          <div className="bg-gray-50 p-4 rounded-lg">
-            <h4 className="font-semibold mb-4">Step 3: Outside Air Heat</h4>
-            <div className="space-y-2 text-sm">
-              <div className="grid grid-cols-2 gap-4">
-                <div>Outside Air Sensible:</div>
-                <div>{breakdown.outsideAir.sensible.toFixed(2)} BTU/hr</div>
-                <div>Outside Air Latent:</div>
-                <div>{breakdown.outsideAir.latent.toFixed(2)} BTU/hr</div>
-                <div className="font-semibold border-t pt-2">Total Outside Air Heat:</div>
-                <div className="font-semibold border-t pt-2">{breakdown.outsideAir.total.toFixed(2)} BTU/hr</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Step 4: Grand Total */}
-          <div className="bg-emerald-50 p-4 rounded-lg">
-            <h4 className="font-semibold mb-4">Step 4: Grand Total Heat</h4>
-            <div className="space-y-2 text-sm">
-              <div className="grid grid-cols-2 gap-4">
-                <div>Room Sensible Heat:</div>
-                <div>{breakdown.roomSensible.total.toFixed(2)} BTU/hr</div>
-                <div>Room Latent Heat:</div>
-                <div>{breakdown.roomLatent.total.toFixed(2)} BTU/hr</div>
-                <div>Outside Air Heat:</div>
-                <div>{breakdown.outsideAir.total.toFixed(2)} BTU/hr</div>
-                <div className="font-semibold">Subtotal:</div>
-                <div className="font-semibold">{breakdown.grandTotal.subtotal.toFixed(2)} BTU/hr</div>
-                <div className="text-emerald-600">Safety Factor (3%):</div>
-                <div className="text-emerald-600">{breakdown.grandTotal.safetyFactor.toFixed(2)} BTU/hr</div>
-                <div className="font-semibold text-lg border-t pt-2">Final Total Heat:</div>
-                <div className="font-semibold text-lg border-t pt-2">{breakdown.grandTotal.final.toFixed(2)} BTU/hr</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Final Tonnage Calculation */}
-          <div className="bg-emerald-100 p-4 rounded-lg">
-            <h4 className="font-semibold mb-4">Step 5: Tonnage Calculation</h4>
-            <div className="text-sm">
-              <p>Final Total Heat ÷ 12,000 BTU/hr/ton = {breakdown.tonnage.toFixed(3)} Tons</p>
-              <p className="font-semibold mt-2">Recommended Size (rounded up to nearest 0.5 ton):</p>
-              <p className="text-2xl font-bold text-emerald-700">{Math.ceil(breakdown.tonnage * 2) / 2} Tons</p>
-            </div>
-          </div>
-        </div>
+        )}
       </div>
     );
   };
 
   return (
-    <section className="py-12 bg-gray-50">
+    <section id="calculator" className="py-12 bg-gray-50">
       <div className="container mx-auto px-4">
         <h2 className="text-3xl font-bold text-center mb-8">AC Tonnage Calculator</h2>
         <div className="max-w-4xl mx-auto">
           {renderDifficultySelector()}
           
           <div className="bg-white rounded-lg shadow-lg p-6">
-            {/* Basic Inputs (always shown) */}
             {renderBasicInputs()}
             
-            {/* Medium Level Inputs */}
             {difficultyLevel !== 'low' && renderMediumInputs()}
             
-            {/* High Level Inputs */}
             {difficultyLevel === 'high' && renderHighInputs()}
             
-            {/* Calculate Button */}
             <div className="mt-8">
               <button
                 onClick={calculateTonnage}
@@ -748,10 +751,8 @@ const Calculator = () => {
             </div>
           </div>
 
-          {/* Results Section */}
           {renderResults()}
 
-          {/* Calculation Notes */}
           <div className="mt-6 text-sm text-gray-600 bg-yellow-50 p-4 rounded-lg">
             <h4 className="font-semibold mb-2">Important Notes:</h4>
             <ul className="list-disc list-inside space-y-1">
