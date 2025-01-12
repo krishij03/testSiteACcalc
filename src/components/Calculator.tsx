@@ -6,12 +6,12 @@ import {
   CITY_DATA,
   APPLIANCES,
   U_FACTORS,
-  HEAT_CONSTANTS,
-  SAFETY_FACTORS,
+  CALCULATION_CONSTANTS,
   SOLAR_HEAT_GAIN,
   Direction,
   Window,
-  Wall
+  Wall,
+  RoofCondition
 } from '../types/calculator';
 
 const DEFAULT_INPUTS: CalculatorInputs = {
@@ -33,124 +33,284 @@ const DEFAULT_INPUTS: CalculatorInputs = {
   }
 };
 
+// Add medium difficulty defaults
+const MEDIUM_DEFAULTS = {
+  occupants: 3,
+  appliances: {
+    'Lights': 2,
+    'Fan': 1
+  }
+};
+
 const Calculator = () => {
   const [difficultyLevel, setDifficultyLevel] = useState<DifficultyLevel>('low');
   const [inputs, setInputs] = useState<CalculatorInputs>(DEFAULT_INPUTS);
   const [breakdown, setBreakdown] = useState<CalculationBreakdown | null>(null);
 
+  const validateInputs = () => {
+    // Basic validations
+    if (!inputs.roomDimensions.length || !inputs.roomDimensions.breadth || !inputs.roomDimensions.height) {
+      throw new Error('Room dimensions are required');
+    }
+    
+    if (!inputs.city || !CITY_DATA[inputs.city]) {
+      throw new Error('Valid city selection is required');
+    }
+
+    // Medium level validations
+    if (difficultyLevel !== 'low') {
+      if (!inputs.occupants || inputs.occupants < 1) {
+        throw new Error('Number of occupants is required for medium/high difficulty');
+      }
+      
+      if (!inputs.roofCondition) {
+        throw new Error('Roof condition is required for medium/high difficulty');
+      }
+    }
+
+    // High level validations
+    if (difficultyLevel === 'high') {
+      if (!inputs.windows || inputs.windows.length === 0) {
+        throw new Error('Window details are required for high difficulty');
+      }
+      
+      if (!inputs.walls || inputs.walls.length === 0) {
+        throw new Error('Wall details are required for high difficulty');
+      }
+      
+      if (!inputs.appliances || Object.keys(inputs.appliances).length === 0) {
+        throw new Error('At least one appliance is required for high difficulty');
+      }
+    }
+  };
+
   const calculateTonnage = () => {
-    const cityData = CITY_DATA[inputs.city];
-    const { length, breadth, height } = inputs.roomDimensions;
-    const roomArea = length * breadth;
-    const roomVolume = roomArea * height;
+    try {
+      validateInputs();
+      const cityData = CITY_DATA[inputs.city];
+      const { length, breadth, height } = inputs.roomDimensions;
 
-    // Initialize breakdown structure
-    const breakdown: CalculationBreakdown = {
-      roomSensible: {
-        glass: 0,
-        wall: 0,
-        floor: 0,
-        roof: 0,
-        people: 0,
-        equipment: 0,
-        lighting: 0,
-        ductGain: 0,
-        fanHeat: 0,
-        total: 0
-      },
-      roomLatent: {
-        people: 0,
-        infiltration: 0,
-        total: 0
-      },
-      outsideAir: {
-        sensible: 0,
-        latent: 0,
-        total: 0
-      },
-      grandTotal: {
-        subtotal: 0,
-        safetyFactor: 0,
-        final: 0
-      },
-      tonnage: 0
-    };
+      // Use defaults based on difficulty level
+      const occupants = inputs.occupants || (difficultyLevel === 'low' ? 2 : 3);
+      const roofCondition = inputs.roofCondition || 'exposed';
+      
+      // For low difficulty, always use default windows
+      const windows = difficultyLevel === 'low' 
+        ? [{ area: 15, direction: 'W' }, { area: 15, direction: 'E' }]
+        : inputs.windows;
 
-    // 1. Room Sensible Heat Calculations
-    
-    // Glass Heat
-    if (inputs.windows) {
-      breakdown.roomSensible.glass = inputs.windows.reduce((total, window) => {
-        return total + (window.area * SOLAR_HEAT_GAIN[window.direction] * U_FACTORS.glass);
-      }, 0);
-    }
+      // For low difficulty, calculate wall areas automatically
+      const walls = difficultyLevel === 'low'
+        ? [
+            { area: length * height, direction: 'N' as Direction },
+            { area: breadth * height, direction: 'E' as Direction },
+            { area: length * height, direction: 'S' as Direction },
+            { area: breadth * height, direction: 'W' as Direction }
+          ]
+        : inputs.walls;
 
-    // Wall Heat
-    const wallArea = 2 * (length + breadth) * height;
-    breakdown.roomSensible.wall = wallArea * cityData.drange * U_FACTORS.wall;
+      // 1) ROOM VOLUME (as per report)
+      const roomArea = length * breadth;
+      const roomVolume = length * breadth * height;
 
-    // Floor Heat
-    breakdown.roomSensible.floor = roomArea * cityData.drange * U_FACTORS.floor;
+      // Initialize breakdown structure
+      const breakdown: CalculationBreakdown = {
+        roomSensible: {
+          glass: 0,
+          wall: 0,
+          floor: 0,
+          roof: 0,
+          people: 0,
+          equipment: 0,
+          lighting: 0,
+          ductGain: 0,
+          fanHeat: 0,
+          total: 0
+        },
+        roomLatent: {
+          people: 0,
+          infiltration: 0,
+          total: 0
+        },
+        outsideAir: {
+          sensible: 0,
+          latent: 0,
+          total: 0
+        },
+        grandTotal: {
+          subtotal: 0,
+          safetyFactor: 0,
+          final: 0
+        },
+        tonnage: 0
+      };
 
-    // Roof Heat
-    const roofUFactor = inputs.roofCondition === 'insulated' ? U_FACTORS.roofInsulated : U_FACTORS.roofUninsulated;
-    breakdown.roomSensible.roof = roomArea * cityData.drange * roofUFactor;
+      // 2) GLASS/WINDOW HEAT GAIN
+      // Q_glass = Σ ( Window Area × directional ΔT × U_glass )
+      if (windows) {
+        breakdown.roomSensible.glass = windows.reduce((total, window) => {
+          const deltaT = cityData.db - CALCULATION_CONSTANTS.indoorTemp;
+          return total + (window.area * deltaT * U_FACTORS.glass);
+        }, 0);
+      } else if (difficultyLevel === 'low') {
+        const defaultWindowArea = 15;
+        const deltaT = cityData.db - CALCULATION_CONSTANTS.indoorTemp;
+        breakdown.roomSensible.glass = 2 * (defaultWindowArea * deltaT * U_FACTORS.glass);
+      }
 
-    // People Sensible Heat
-    breakdown.roomSensible.people = (inputs.occupants || 2) * HEAT_CONSTANTS.personSensible;
+      // 3) WALL HEAT GAIN
+      // Q_wall = Σ ( Wall Area × ΔT × U_wall )
+      const deltaT = cityData.db - CALCULATION_CONSTANTS.indoorTemp;
+      if (walls) {
+        breakdown.roomSensible.wall = walls.reduce((total, wall) => {
+          return total + (wall.area * deltaT * U_FACTORS.wall);
+        }, 0);
+      } else {
+        const wallArea = 2 * (length + breadth) * height;
+        breakdown.roomSensible.wall = wallArea * deltaT * U_FACTORS.wall;
+      }
 
-    // Equipment Heat
-    if (inputs.appliances) {
-      breakdown.roomSensible.equipment = Object.entries(inputs.appliances).reduce((total, [name, count]) => {
-        const appliance = APPLIANCES.find(a => a.name === name);
-        if (appliance) {
-          return total + (appliance.wattage * count * HEAT_CONSTANTS.equipmentFactor);
+      // 4) FLOOR HEAT
+      // Q_floor = (Floor Area) × ΔT × U_floor
+      breakdown.roomSensible.floor = roomArea * deltaT * U_FACTORS.floor;
+
+      // 5) ROOF HEAT
+      // Q_roof = (Roof Area) × ΔT × U_roof
+      let roofUFactor = U_FACTORS.roofExposed; // default for uninsulated, exposed roof
+      if (roofCondition) {
+        switch (roofCondition) {
+          case 'insulated': roofUFactor = U_FACTORS.roofInsulated; break;
+          case 'shaded': roofUFactor = U_FACTORS.roofShaded; break;
+          case 'water-covered': roofUFactor = U_FACTORS.roofWaterCovered; break;
         }
-        return total;
-      }, 0);
+      }
+      breakdown.roomSensible.roof = roomArea * deltaT * roofUFactor;
+
+      // 6) PEOPLE HEAT (SENSIBLE)
+      // Q_people_sensible = (Number of people) × 255
+      breakdown.roomSensible.people = occupants * CALCULATION_CONSTANTS.personSensibleHeat;
+
+      // 7) EQUIPMENT LOAD
+      // Q_equipment = [ Σ (kW of each device) ] × 3410
+      if (inputs.appliances && Object.keys(inputs.appliances).length > 0) {
+        breakdown.roomSensible.equipment = Object.entries(inputs.appliances).reduce((total, [name, count]) => {
+          const appliance = APPLIANCES.find(a => a.name === name);
+          if (appliance) {
+            return total + (appliance.wattage * count * CALCULATION_CONSTANTS.equipmentFactor);
+          }
+          return total;
+        }, 0);
+      } else if (difficultyLevel === 'low') {
+        // Default for low difficulty: 2 lights at 0.1 kW each
+        breakdown.roomSensible.equipment = 2 * 0.1 * CALCULATION_CONSTANTS.equipmentFactor;
+      }
+
+      // 8) LIGHTING LOAD
+      // Q_lighting = 1.2 × (Floor Area) × 3.4
+      breakdown.roomSensible.lighting = 
+        CALCULATION_CONSTANTS.lightingLoadFactor * roomArea * CALCULATION_CONSTANTS.lightingConstant;
+
+      // 9) SUM OF ROOM SENSIBLE GAINS
+      const sensibleSubtotal = 
+        breakdown.roomSensible.glass +
+        breakdown.roomSensible.wall +
+        breakdown.roomSensible.floor +
+        breakdown.roomSensible.roof +
+        breakdown.roomSensible.people +
+        breakdown.roomSensible.equipment +
+        breakdown.roomSensible.lighting;
+
+      // 10) SUPPLY DUCT & FAN HEAT GAINS (7% total)
+      breakdown.roomSensible.ductGain = sensibleSubtotal * CALCULATION_CONSTANTS.supplyDuctGain;
+      breakdown.roomSensible.fanHeat = sensibleSubtotal * CALCULATION_CONSTANTS.fanHeatGain;
+      breakdown.roomSensible.total = sensibleSubtotal * (1.07); // Combined 7%
+
+      // 11) ROOM LATENT HEAT
+      // Calculate Ventilation Rate
+      const ventilation = inputs.infiltrationRate || Math.max(
+        (roomVolume * CALCULATION_CONSTANTS.ventilationFactor) / 60,
+        (occupants * CALCULATION_CONSTANTS.cfmPerPerson)
+      );
+
+      // People Latent Heat
+      breakdown.roomLatent.people = occupants * CALCULATION_CONSTANTS.personLatentHeat.min;
+
+      // Infiltration Latent Heat
+      const deltaGrains = cityData.grPerLb - CALCULATION_CONSTANTS.indoorGrains;
+      breakdown.roomLatent.infiltration = 
+        ventilation * deltaGrains * CALCULATION_CONSTANTS.bypassFactor * CALCULATION_CONSTANTS.latentConstant;
+
+      breakdown.roomLatent.total = breakdown.roomLatent.people + breakdown.roomLatent.infiltration;
+
+      // 12) EFFECTIVE ROOM TOTAL HEAT
+      const effectiveRoomTotal = breakdown.roomSensible.total + breakdown.roomLatent.total;
+
+      // 13) OUTSIDE AIR HEAT
+      breakdown.outsideAir.sensible = 
+        ventilation * deltaT * (1 - CALCULATION_CONSTANTS.bypassFactor) * CALCULATION_CONSTANTS.sensibleConstant;
+      
+      breakdown.outsideAir.latent = 
+        ventilation * deltaGrains * (1 - CALCULATION_CONSTANTS.bypassFactor) * CALCULATION_CONSTANTS.latentConstant;
+      
+      breakdown.outsideAir.total = breakdown.outsideAir.sensible + breakdown.outsideAir.latent;
+
+      // 14) GRAND TOTAL HEAT SUBTOTAL
+      breakdown.grandTotal.subtotal = effectiveRoomTotal + breakdown.outsideAir.total;
+
+      // 15) OVERALL SAFETY FACTOR (3%)
+      breakdown.grandTotal.safetyFactor = breakdown.grandTotal.subtotal * CALCULATION_CONSTANTS.safetyFactor;
+      breakdown.grandTotal.final = breakdown.grandTotal.subtotal * (1 + CALCULATION_CONSTANTS.safetyFactor);
+
+      // 16) TONNAGE CALCULATION
+      breakdown.tonnage = breakdown.grandTotal.final / CALCULATION_CONSTANTS.tonConversion;
+
+      setBreakdown(breakdown);
+    } catch (error) {
+      console.error('Calculation error:', error);
+      // Handle error appropriately
     }
+  };
 
-    // Lighting Heat
-    breakdown.roomSensible.lighting = HEAT_CONSTANTS.lightingLoad * roomArea * HEAT_CONSTANTS.lightingFactor;
-
-    // Subtotal before gains
-    const sensibleSubtotal = Object.values(breakdown.roomSensible).reduce((a, b) => a + b, 0);
-
-    // Duct and Fan Heat Gains
-    breakdown.roomSensible.ductGain = sensibleSubtotal * SAFETY_FACTORS.supplyDuct;
-    breakdown.roomSensible.fanHeat = sensibleSubtotal * SAFETY_FACTORS.fanHeat;
-    breakdown.roomSensible.total = sensibleSubtotal + breakdown.roomSensible.ductGain + breakdown.roomSensible.fanHeat;
-
-    // 2. Room Latent Heat Calculations
-    const ventByArea = (roomVolume * HEAT_CONSTANTS.ventilationFactor) / 60;
-    const ventByPeople = (inputs.occupants || 2) * HEAT_CONSTANTS.cfmPerPerson;
-    const ventilation = Math.max(ventByArea, ventByPeople);
-
-    breakdown.roomLatent.people = (inputs.occupants || 2) * HEAT_CONSTANTS.personLatent;
-    breakdown.roomLatent.infiltration = ventilation * (cityData.grPerLb - HEAT_CONSTANTS.indoorGrains) * 
-      HEAT_CONSTANTS.latentConstant * HEAT_CONSTANTS.bypassFactor;
-    breakdown.roomLatent.total = breakdown.roomLatent.people + breakdown.roomLatent.infiltration;
-
-    // 3. Outside Air Heat
-    breakdown.outsideAir.sensible = ventilation * cityData.drange * 
-      (1 - HEAT_CONSTANTS.bypassFactor) * HEAT_CONSTANTS.sensibleConstant;
+  const handleDifficultyChange = (level: DifficultyLevel) => {
+    setDifficultyLevel(level);
     
-    breakdown.outsideAir.latent = ventilation * (cityData.grPerLb - HEAT_CONSTANTS.indoorGrains) * 
-      (1 - HEAT_CONSTANTS.bypassFactor) * HEAT_CONSTANTS.latentConstant;
-    
-    breakdown.outsideAir.total = breakdown.outsideAir.sensible + breakdown.outsideAir.latent;
-
-    // 4. Grand Total Calculations
-    breakdown.grandTotal.subtotal = breakdown.roomSensible.total + 
-      breakdown.roomLatent.total + breakdown.outsideAir.total;
-    
-    breakdown.grandTotal.safetyFactor = breakdown.grandTotal.subtotal * SAFETY_FACTORS.overall;
-    breakdown.grandTotal.final = breakdown.grandTotal.subtotal + breakdown.grandTotal.safetyFactor;
-
-    // 5. Final Tonnage
-    breakdown.tonnage = breakdown.grandTotal.final / HEAT_CONSTANTS.tonConversion;
-
-    setBreakdown(breakdown);
+    // Reset inputs based on difficulty level
+    switch(level) {
+      case 'low':
+        setInputs({
+          ...DEFAULT_INPUTS,
+          difficultyLevel: level,
+          windows: [
+            { area: 15, direction: 'W' },
+            { area: 15, direction: 'E' }
+          ],
+          occupants: 2,
+          roofCondition: 'exposed',
+          appliances: { 'Lights': 2 }
+        });
+        break;
+        
+      case 'medium':
+        setInputs({
+          ...inputs,
+          difficultyLevel: level,
+          occupants: MEDIUM_DEFAULTS.occupants,
+          appliances: MEDIUM_DEFAULTS.appliances
+        });
+        break;
+        
+      case 'high':
+        setInputs({
+          ...inputs,
+          difficultyLevel: level,
+          // Clear presets for high difficulty
+          windows: [],
+          walls: [],
+          occupants: undefined,
+          appliances: {}
+        });
+        break;
+    }
   };
 
   const renderDifficultySelector = () => (
@@ -160,10 +320,7 @@ const Calculator = () => {
         {(['low', 'medium', 'high'] as DifficultyLevel[]).map((level) => (
           <button
             key={level}
-            onClick={() => {
-              setDifficultyLevel(level);
-              setInputs({ ...inputs, difficultyLevel: level });
-            }}
+            onClick={() => handleDifficultyChange(level)}
             className={`p-4 rounded-lg border-2 transition-all ${
               difficultyLevel === level
                 ? 'border-emerald-600 bg-emerald-50'
@@ -172,10 +329,17 @@ const Calculator = () => {
           >
             <div className="font-semibold capitalize mb-2">{level}</div>
             <div className="text-sm text-gray-600">
-              {level === 'low' && 'Basic calculation with minimal inputs'}
-              {level === 'medium' && 'Balanced inputs for better accuracy'}
-              {level === 'high' && 'Detailed inputs for precise results'}
+              {level === 'low' && 'Basic calculation with preset values'}
+              {level === 'medium' && 'Some customization with defaults'}
+              {level === 'high' && 'Full customization of all parameters'}
             </div>
+            {level === 'low' && (
+              <div className="mt-2 text-xs text-gray-500">
+                <p>• 2 windows (15 ft² each)</p>
+                <p>• 2 occupants</p>
+                <p>• Basic lighting only</p>
+              </div>
+            )}
           </button>
         ))}
       </div>
@@ -233,10 +397,11 @@ const Calculator = () => {
             <option key={city} value={city}>{city}</option>
           ))}
         </select>
-        {/* Show selected city's data */}
-        <div className="mt-2 text-sm text-gray-600">
-          <p>DB: {CITY_DATA[inputs.city].db}°F, WB: {CITY_DATA[inputs.city].wb}°F</p>
-          <p>RH: {CITY_DATA[inputs.city].rh}%, Grains/lb: {CITY_DATA[inputs.city].grPerLb}</p>
+        <div className="mt-2 text-sm text-gray-600 grid grid-cols-2 gap-2">
+          <p>DB: {CITY_DATA[inputs.city].db}°F</p>
+          <p>WB: {CITY_DATA[inputs.city].wb}°F</p>
+          <p>RH: {CITY_DATA[inputs.city].rh}%</p>
+          <p>Grains/lb: {CITY_DATA[inputs.city].grPerLb}</p>
         </div>
       </div>
     </div>
@@ -244,11 +409,13 @@ const Calculator = () => {
 
   const renderMediumInputs = () => (
     <div className="space-y-6 mt-6">
+      {/* Occupancy and Roof */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
           <label className="block text-gray-700 mb-2">Number of Occupants</label>
           <input
             type="number"
+            min="1"
             value={inputs.occupants || 2}
             onChange={(e) => setInputs({ ...inputs, occupants: Number(e.target.value) })}
             className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
@@ -258,7 +425,7 @@ const Calculator = () => {
           <label className="block text-gray-700 mb-2">Roof Condition</label>
           <select
             value={inputs.roofCondition}
-            onChange={(e) => setInputs({ ...inputs, roofCondition: e.target.value as any })}
+            onChange={(e) => setInputs({ ...inputs, roofCondition: e.target.value as RoofCondition })}
             className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
           >
             <option value="exposed">Exposed</option>
@@ -268,17 +435,140 @@ const Calculator = () => {
           </select>
         </div>
       </div>
-    </div>
-  );
 
-  const renderHighInputs = () => (
-    <div className="space-y-6 mt-6">
+      {/* Windows Section */}
       <div>
-        <h4 className="font-semibold mb-2">Appliances</h4>
+        <h4 className="font-semibold mb-2">Windows</h4>
+        <div className="space-y-4">
+          {(inputs.windows || [{ area: 15, direction: 'W' }]).map((window, index) => (
+            <div key={index} className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
+              <div>
+                <label className="block text-gray-700 mb-2">Window {index + 1} Area (ft²)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={window.area}
+                  onChange={(e) => {
+                    const newWindows = [...(inputs.windows || [])];
+                    newWindows[index] = { ...window, area: Number(e.target.value) };
+                    setInputs({ ...inputs, windows: newWindows });
+                  }}
+                  className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-700 mb-2">Direction</label>
+                <select
+                  value={window.direction}
+                  onChange={(e) => {
+                    const newWindows = [...(inputs.windows || [])];
+                    newWindows[index] = { ...window, direction: e.target.value as Direction };
+                    setInputs({ ...inputs, windows: newWindows });
+                  }}
+                  className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
+                >
+                  {Object.keys(SOLAR_HEAT_GAIN).map(direction => (
+                    <option key={direction} value={direction}>{direction}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-end">
+                <button
+                  onClick={() => {
+                    const newWindows = [...(inputs.windows || [])];
+                    newWindows.splice(index, 1);
+                    setInputs({ ...inputs, windows: newWindows });
+                  }}
+                  className="p-2 text-red-600 hover:text-red-700"
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          ))}
+          <button
+            onClick={() => {
+              const newWindows = [...(inputs.windows || []), { area: 15, direction: 'W' as Direction }];
+              setInputs({ ...inputs, windows: newWindows });
+            }}
+            className="w-full p-2 bg-emerald-50 text-emerald-600 rounded hover:bg-emerald-100"
+          >
+            Add Window
+          </button>
+        </div>
+      </div>
+
+      {/* Walls Section */}
+      <div>
+        <h4 className="font-semibold mb-2">Walls</h4>
+        <div className="space-y-4">
+          {(inputs.walls || []).map((wall, index) => (
+            <div key={index} className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
+              <div>
+                <label className="block text-gray-700 mb-2">Wall {index + 1} Area (ft²)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={wall.area}
+                  onChange={(e) => {
+                    const newWalls = [...(inputs.walls || [])];
+                    newWalls[index] = { ...wall, area: Number(e.target.value) };
+                    setInputs({ ...inputs, walls: newWalls });
+                  }}
+                  className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-700 mb-2">Direction</label>
+                <select
+                  value={wall.direction}
+                  onChange={(e) => {
+                    const newWalls = [...(inputs.walls || [])];
+                    newWalls[index] = { ...wall, direction: e.target.value as Direction };
+                    setInputs({ ...inputs, walls: newWalls });
+                  }}
+                  className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
+                >
+                  {Object.keys(SOLAR_HEAT_GAIN).map(direction => (
+                    <option key={direction} value={direction}>{direction}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-end">
+                <button
+                  onClick={() => {
+                    const newWalls = [...(inputs.walls || [])];
+                    newWalls.splice(index, 1);
+                    setInputs({ ...inputs, walls: newWalls });
+                  }}
+                  className="p-2 text-red-600 hover:text-red-700"
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          ))}
+          <button
+            onClick={() => {
+              const newWalls = [...(inputs.walls || []), { area: 0, direction: 'N' as Direction }];
+              setInputs({ ...inputs, walls: newWalls });
+            }}
+            className="w-full p-2 bg-emerald-50 text-emerald-600 rounded hover:bg-emerald-100"
+          >
+            Add Wall
+          </button>
+        </div>
+      </div>
+
+      {/* Equipment Section - Single consolidated section */}
+      <div>
+        <h4 className="font-semibold mb-2">Equipment</h4>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {APPLIANCES.map(appliance => (
-            <div key={appliance.name} className="flex items-center space-x-2">
-              <label className="flex-grow">{appliance.name}</label>
+            <div key={appliance.name} className="flex items-center space-x-2 p-4 bg-gray-50 rounded-lg">
+              <label className="flex-grow">
+                {appliance.name} ({appliance.wattage}kW)
+              </label>
               <input
                 type="number"
                 min="0"
@@ -299,6 +589,30 @@ const Calculator = () => {
     </div>
   );
 
+  const renderHighInputs = () => (
+    <div className="space-y-6 mt-6">
+      {/* Special Infiltration Rate (High difficulty only) */}
+      <div>
+        <label className="block text-gray-700 mb-2">Special Infiltration Rate (optional)</label>
+        <input
+          type="number"
+          min="0"
+          value={inputs.infiltrationRate || ''}
+          onChange={(e) => setInputs({
+            ...inputs,
+            infiltrationRate: Number(e.target.value)
+          })}
+          className="w-full p-2 border rounded focus:ring-2 focus:ring-emerald-500"
+        />
+        <p className="text-sm text-gray-500 mt-1">
+          Leave empty to use standard calculation method
+        </p>
+      </div>
+
+      {/* Any other high-difficulty-specific inputs can go here */}
+    </div>
+  );
+
   const renderResults = () => {
     if (!breakdown) return null;
 
@@ -310,76 +624,95 @@ const Calculator = () => {
           </h3>
         </div>
 
-        {/* Room Sensible Heat Breakdown */}
-        <div className="bg-gray-50 p-4 rounded-lg">
-          <h4 className="font-semibold mb-4">Room Sensible Heat</h4>
-          <div className="space-y-2">
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>Glass Heat:</div>
-              <div>{breakdown.roomSensible.glass.toFixed(2)} BTU/hr</div>
-              <div>Wall Heat:</div>
-              <div>{breakdown.roomSensible.wall.toFixed(2)} BTU/hr</div>
-              <div>Floor Heat:</div>
-              <div>{breakdown.roomSensible.floor.toFixed(2)} BTU/hr</div>
-              <div>Roof Heat:</div>
-              <div>{breakdown.roomSensible.roof.toFixed(2)} BTU/hr</div>
-              <div>People Heat:</div>
-              <div>{breakdown.roomSensible.people.toFixed(2)} BTU/hr</div>
-              <div>Equipment Heat:</div>
-              <div>{breakdown.roomSensible.equipment.toFixed(2)} BTU/hr</div>
-              <div>Lighting Heat:</div>
-              <div>{breakdown.roomSensible.lighting.toFixed(2)} BTU/hr</div>
-              <div>Duct Gain:</div>
-              <div>{breakdown.roomSensible.ductGain.toFixed(2)} BTU/hr</div>
-              <div>Fan Heat:</div>
-              <div>{breakdown.roomSensible.fanHeat.toFixed(2)} BTU/hr</div>
-              <div className="font-semibold">Total Sensible Heat:</div>
-              <div className="font-semibold">{breakdown.roomSensible.total.toFixed(2)} BTU/hr</div>
+        {/* Calculation Steps Breakdown */}
+        <div className="space-y-6">
+          {/* Step 1: Room Sensible Heat */}
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <h4 className="font-semibold mb-4">Step 1: Room Sensible Heat</h4>
+            <div className="space-y-2 text-sm">
+              <div className="grid grid-cols-2 gap-4">
+                <div>Glass Heat:</div>
+                <div>{breakdown.roomSensible.glass.toFixed(2)} BTU/hr</div>
+                <div>Wall Heat:</div>
+                <div>{breakdown.roomSensible.wall.toFixed(2)} BTU/hr</div>
+                <div>Floor Heat:</div>
+                <div>{breakdown.roomSensible.floor.toFixed(2)} BTU/hr</div>
+                <div>Roof Heat:</div>
+                <div>{breakdown.roomSensible.roof.toFixed(2)} BTU/hr</div>
+                <div>People Heat:</div>
+                <div>{breakdown.roomSensible.people.toFixed(2)} BTU/hr</div>
+                <div>Equipment Heat:</div>
+                <div>{breakdown.roomSensible.equipment.toFixed(2)} BTU/hr</div>
+                <div>Lighting Heat:</div>
+                <div>{breakdown.roomSensible.lighting.toFixed(2)} BTU/hr</div>
+                <div className="text-emerald-600">Supply Duct Gain (2%):</div>
+                <div className="text-emerald-600">{breakdown.roomSensible.ductGain.toFixed(2)} BTU/hr</div>
+                <div className="text-emerald-600">Fan Heat Gain (5%):</div>
+                <div className="text-emerald-600">{breakdown.roomSensible.fanHeat.toFixed(2)} BTU/hr</div>
+                <div className="font-semibold border-t pt-2">Total Sensible Heat:</div>
+                <div className="font-semibold border-t pt-2">{breakdown.roomSensible.total.toFixed(2)} BTU/hr</div>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Room Latent Heat Breakdown */}
-        <div className="bg-gray-50 p-4 rounded-lg">
-          <h4 className="font-semibold mb-4">Room Latent Heat</h4>
-          <div className="space-y-2">
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>People Latent Heat:</div>
-              <div>{breakdown.roomLatent.people.toFixed(2)} BTU/hr</div>
-              <div>Infiltration Heat:</div>
-              <div>{breakdown.roomLatent.infiltration.toFixed(2)} BTU/hr</div>
-              <div className="font-semibold">Total Latent Heat:</div>
-              <div className="font-semibold">{breakdown.roomLatent.total.toFixed(2)} BTU/hr</div>
+          {/* Step 2: Room Latent Heat */}
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <h4 className="font-semibold mb-4">Step 2: Room Latent Heat</h4>
+            <div className="space-y-2 text-sm">
+              <div className="grid grid-cols-2 gap-4">
+                <div>People Latent Heat:</div>
+                <div>{breakdown.roomLatent.people.toFixed(2)} BTU/hr</div>
+                <div>Infiltration Heat:</div>
+                <div>{breakdown.roomLatent.infiltration.toFixed(2)} BTU/hr</div>
+                <div className="font-semibold border-t pt-2">Total Latent Heat:</div>
+                <div className="font-semibold border-t pt-2">{breakdown.roomLatent.total.toFixed(2)} BTU/hr</div>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Outside Air Heat */}
-        <div className="bg-gray-50 p-4 rounded-lg">
-          <h4 className="font-semibold mb-4">Outside Air Heat</h4>
-          <div className="space-y-2">
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>Sensible Heat:</div>
-              <div>{breakdown.outsideAir.sensible.toFixed(2)} BTU/hr</div>
-              <div>Latent Heat:</div>
-              <div>{breakdown.outsideAir.latent.toFixed(2)} BTU/hr</div>
-              <div className="font-semibold">Total Outside Air Heat:</div>
-              <div className="font-semibold">{breakdown.outsideAir.total.toFixed(2)} BTU/hr</div>
+          {/* Step 3: Outside Air Heat */}
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <h4 className="font-semibold mb-4">Step 3: Outside Air Heat</h4>
+            <div className="space-y-2 text-sm">
+              <div className="grid grid-cols-2 gap-4">
+                <div>Outside Air Sensible:</div>
+                <div>{breakdown.outsideAir.sensible.toFixed(2)} BTU/hr</div>
+                <div>Outside Air Latent:</div>
+                <div>{breakdown.outsideAir.latent.toFixed(2)} BTU/hr</div>
+                <div className="font-semibold border-t pt-2">Total Outside Air Heat:</div>
+                <div className="font-semibold border-t pt-2">{breakdown.outsideAir.total.toFixed(2)} BTU/hr</div>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Grand Total */}
-        <div className="bg-emerald-50 p-4 rounded-lg">
-          <h4 className="font-semibold mb-4">Grand Total Heat</h4>
-          <div className="space-y-2">
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>Subtotal:</div>
-              <div>{breakdown.grandTotal.subtotal.toFixed(2)} BTU/hr</div>
-              <div>Safety Factor (3%):</div>
-              <div>{breakdown.grandTotal.safetyFactor.toFixed(2)} BTU/hr</div>
-              <div className="font-semibold text-lg">Final Total Heat:</div>
-              <div className="font-semibold text-lg">{breakdown.grandTotal.final.toFixed(2)} BTU/hr</div>
+          {/* Step 4: Grand Total */}
+          <div className="bg-emerald-50 p-4 rounded-lg">
+            <h4 className="font-semibold mb-4">Step 4: Grand Total Heat</h4>
+            <div className="space-y-2 text-sm">
+              <div className="grid grid-cols-2 gap-4">
+                <div>Room Sensible Heat:</div>
+                <div>{breakdown.roomSensible.total.toFixed(2)} BTU/hr</div>
+                <div>Room Latent Heat:</div>
+                <div>{breakdown.roomLatent.total.toFixed(2)} BTU/hr</div>
+                <div>Outside Air Heat:</div>
+                <div>{breakdown.outsideAir.total.toFixed(2)} BTU/hr</div>
+                <div className="font-semibold">Subtotal:</div>
+                <div className="font-semibold">{breakdown.grandTotal.subtotal.toFixed(2)} BTU/hr</div>
+                <div className="text-emerald-600">Safety Factor (3%):</div>
+                <div className="text-emerald-600">{breakdown.grandTotal.safetyFactor.toFixed(2)} BTU/hr</div>
+                <div className="font-semibold text-lg border-t pt-2">Final Total Heat:</div>
+                <div className="font-semibold text-lg border-t pt-2">{breakdown.grandTotal.final.toFixed(2)} BTU/hr</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Final Tonnage Calculation */}
+          <div className="bg-emerald-100 p-4 rounded-lg">
+            <h4 className="font-semibold mb-4">Step 5: Tonnage Calculation</h4>
+            <div className="text-sm">
+              <p>Final Total Heat ÷ 12,000 BTU/hr/ton = {breakdown.tonnage.toFixed(3)} Tons</p>
+              <p className="font-semibold mt-2">Recommended Size (rounded up to nearest 0.5 ton):</p>
+              <p className="text-2xl font-bold text-emerald-700">{Math.ceil(breakdown.tonnage * 2) / 2} Tons</p>
             </div>
           </div>
         </div>
@@ -393,11 +726,18 @@ const Calculator = () => {
         <h2 className="text-3xl font-bold text-center mb-8">AC Tonnage Calculator</h2>
         <div className="max-w-4xl mx-auto">
           {renderDifficultySelector()}
+          
           <div className="bg-white rounded-lg shadow-lg p-6">
+            {/* Basic Inputs (always shown) */}
             {renderBasicInputs()}
+            
+            {/* Medium Level Inputs */}
             {difficultyLevel !== 'low' && renderMediumInputs()}
+            
+            {/* High Level Inputs */}
             {difficultyLevel === 'high' && renderHighInputs()}
             
+            {/* Calculate Button */}
             <div className="mt-8">
               <button
                 onClick={calculateTonnage}
@@ -407,7 +747,22 @@ const Calculator = () => {
               </button>
             </div>
           </div>
+
+          {/* Results Section */}
           {renderResults()}
+
+          {/* Calculation Notes */}
+          <div className="mt-6 text-sm text-gray-600 bg-yellow-50 p-4 rounded-lg">
+            <h4 className="font-semibold mb-2">Important Notes:</h4>
+            <ul className="list-disc list-inside space-y-1">
+              <li>All calculations are based on ASHRAE standards and industry best practices</li>
+              <li>Room dimensions should be in feet (ft)</li>
+              <li>Window areas should be in square feet (ft²)</li>
+              <li>Final tonnage is rounded up to the nearest 0.5 ton for practical sizing</li>
+              <li>For most accurate results, consider using the high difficulty level</li>
+              <li>Consult with an HVAC professional for final verification</li>
+            </ul>
+          </div>
         </div>
       </div>
     </section>

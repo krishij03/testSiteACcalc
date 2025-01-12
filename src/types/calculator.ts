@@ -26,7 +26,7 @@ export interface Appliance {
   wattage: number; // in kW
 }
 
-// City Data Constants
+// City Data Constants - Exactly as per report
 export const CITY_DATA: Record<string, CityData> = {
   'New Delhi': { db: 104, wb: 80, drange: 24, rh: 40, dp: 73, grPerLb: 62 },
   'Mumbai': { db: 92, wb: 86, drange: 6, rh: 85, dp: 83, grPerLb: 82 },
@@ -40,16 +40,18 @@ export const CITY_DATA: Record<string, CityData> = {
   'Lucknow': { db: 102, wb: 78, drange: 24, rh: 40, dp: 72, grPerLb: 60 }
 };
 
-// U-Factors
+// U-Factors - Exactly as per report section 4.2
 export const U_FACTORS = {
-  glass: 0.30,
-  wall: 0.16,
-  floor: 0.02,
-  roofUninsulated: 0.15,
-  roofInsulated: 0.135
+  glass: 0.30,    // Window Glass (ordinary)
+  wall: 0.16,     // Standard Wall
+  floor: 0.02,    // Floor
+  roofExposed: 0.46,    // Uninsulated Roof (from section C)
+  roofInsulated: 0.135, // Insulated Roof (from section C)
+  roofShaded: 0.15,     // Standard exposed roof value
+  roofWaterCovered: 0.1 // Reduced factor for water-covered
 };
 
-// Preset Appliances
+// Appliance Preset Wattages - Exactly as per report section 4.3
 export const APPLIANCES: Appliance[] = [
   { name: 'Lights', wattage: 0.05 },
   { name: 'Oven/Microwave', wattage: 1.5 },
@@ -59,31 +61,7 @@ export const APPLIANCES: Appliance[] = [
   { name: 'Fan', wattage: 0.05 }
 ];
 
-// Heat Load Constants
-export const HEAT_CONSTANTS = {
-  personSensible: 255,
-  personLatent: 245,
-  equipmentFactor: 3410,
-  lightingFactor: 3.4,
-  lightingLoad: 1.2,
-  ventilationFactor: 0.42,
-  bypassFactor: 0.12,
-  sensibleConstant: 1.08,
-  latentConstant: 0.68,
-  tonConversion: 12000,
-  cfmPerPerson: 10,
-  indoorTemp: 75,
-  indoorGrains: 60
-};
-
-// Safety Factors
-export const SAFETY_FACTORS = {
-  overall: 0.03,
-  supplyDuct: 0.02,
-  fanHeat: 0.05
-};
-
-// Solar Heat Gain through Glass (4 PM)
+// Solar Heat Gain - Exactly as per report section B
 export const SOLAR_HEAT_GAIN: Record<Direction, number> = {
   'W': 163,
   'SW': 85,
@@ -91,9 +69,78 @@ export const SOLAR_HEAT_GAIN: Record<Direction, number> = {
   'N': 45,
   'S': 45,
   'E': 45,
-  'SE': 45,
-  'NE': 45
+  'SE': 85,
+  'NE': 138
 };
+
+// All calculation constants from the report
+export const CALCULATION_CONSTANTS = {
+  // Occupant Loads (section 4.4)
+  personSensibleHeat: 255,    // Default sensible heat
+  personLatentHeat: {         // Latent heat range
+    min: 245,
+    max: 270
+  },
+  
+  // Equipment & Lighting
+  equipmentFactor: 3410,      // BTU/hr per kW
+  lightingLoadFactor: 1.2,    // From lighting load formula
+  lightingConstant: 3.4,      // From lighting load formula
+  
+  // Ventilation & Infiltration (section 4.5)
+  ventilationFactor: 0.42,    // From ventilation rate formula
+  bypassFactor: 0.12,         // Default Coil Bypass Factor
+  sensibleConstant: 1.08,     // For outside air sensible calculation
+  latentConstant: 0.68,       // For outside air latent calculation
+  cfmPerPerson: 10,           // From ventilation rate formula
+  
+  // Temperature & Moisture
+  indoorTemp: 75,             // °F - Standard indoor design temp
+  indoorGrains: 60,           // grains/lb - Standard indoor moisture
+  
+  // Safety Margins (section 4.6)
+  safetyFactor: 0.03,         // Overall Safety Factor = 3%
+  supplyDuctGain: 0.02,       // Supply Duct Heat Gain = 2%
+  fanHeatGain: 0.05,          // Fan Heat Gain = 5%
+  
+  // Conversion
+  tonConversion: 12000        // BTU/hr per ton of refrigeration
+};
+
+// Advanced Options from section E
+export const ACTIVITY_HEAT_GAIN = {
+  seated: {
+    sensible: { min: 175, max: 195 },
+    latent: { min: 195, max: 230 }
+  },
+  office: {
+    sensible: { min: 180, max: 200 },
+    latent: { min: 250, max: 300 }
+  },
+  lightWork: {
+    sensible: { min: 190, max: 220 },
+    latent: { min: 530, max: 560 }
+  }
+};
+
+// Bypass Factors from section A
+export const COIL_BYPASS_FACTORS = {
+  '2row': { min: 0.225, max: 0.373 },
+  '3row': { min: 0.107, max: 0.228 },
+  '4row': { min: 0.052, max: 0.140 }
+};
+
+// Occupancy Standards from section D
+export const OCCUPANCY_STANDARDS = {
+  apartmentHotel: {
+    spacePerPerson: 60,      // ft² per person
+    cfmPerPerson: { min: 20, max: 30 }
+  }
+};
+
+// Add new types for advanced options
+export type ActivityLevel = 'seated' | 'office' | 'lightWork';
+export type CoilType = '2row' | '3row' | '4row';
 
 export interface CalculatorInputs {
   difficultyLevel: DifficultyLevel;
